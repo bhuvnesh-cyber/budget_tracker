@@ -73,12 +73,44 @@ st.markdown("""
         margin-top: 0.25rem;
     }
     .login-container {
-        background: #161b22;
+        background: linear-gradient(135deg, #161b22 0%, #1a1f28 100%);
         border: 1px solid #30363d;
-        border-radius: 12px;
-        padding: 2rem;
-        max-width: 400px;
-        margin: 4rem auto;
+        border-radius: 16px;
+        padding: 2.5rem;
+        max-width: 420px;
+        margin: 3rem auto;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+    .login-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .login-title {
+        font-size: 1.75rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+    }
+    .login-subtitle {
+        color: #8b949e;
+        font-size: 0.875rem;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: #0d1117;
+        padding: 4px;
+        border-radius: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 6px;
+        color: #8b949e;
+        padding: 0.5rem 1.5rem;
+    }
+    .stTabs [aria-selected="true"] {
+        background: #1f6feb !important;
+        color: #ffffff !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -267,59 +299,84 @@ if 'selected_month' not in st.session_state:
 # ---- LOGIN/SIGNUP PAGE ----
 if not st.session_state.logged_in:
     st.markdown("""
-    <div style='text-align: center; margin-bottom: 2rem;'>
-        <h1 style='font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>Budget Tracker</h1>
+    <div class='login-header' style='margin-top: 3rem;'>
+        <h1 style='font-size: 3rem; font-weight: 700; background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem;'>Budget Tracker</h1>
+        <p style='color: #8b949e; font-size: 1rem;'>Manage your finances with ease</p>
     </div>
     """, unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["Login", "Sign Up"])
-    
-    with tab1:
-        st.markdown("<div class='login-container'>", unsafe_allow_html=True)
-        with st.form("login_form"):
-            st.markdown("<h3 style='text-align: center; margin-bottom: 1.5rem;'>Welcome Back</h3>", unsafe_allow_html=True)
-            username = st.text_input("Username", key="login_username")
-            password = st.text_input("Password", type="password", key="login_password")
-            submit = st.form_submit_button("Login", use_container_width=True)
+    # Center the tabs
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        tab1, tab2 = st.tabs(["🔐 Login", "✨ Sign Up"])
+        
+        with tab1:
+            st.markdown("<div class='login-container'>", unsafe_allow_html=True)
+            st.markdown("""
+            <div style='text-align: center; margin-bottom: 1.5rem;'>
+                <h3 class='login-title'>Welcome Back</h3>
+                <p class='login-subtitle'>Sign in to continue to your account</p>
+            </div>
+            """, unsafe_allow_html=True)
             
-            if submit:
-                if username and password:
-                    user_id = authenticate_user(username, password)
-                    if user_id:
-                        st.session_state.logged_in = True
-                        st.session_state.user_id = user_id
-                        st.session_state.username = username
-                        st.session_state.selected_month = get_current_month()
-                        st.rerun()
-                    else:
-                        st.error("Invalid username or password")
-                else:
-                    st.error("Please enter both username and password")
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    with tab2:
-        st.markdown("<div class='login-container'>", unsafe_allow_html=True)
-        with st.form("signup_form"):
-            st.markdown("<h3 style='text-align: center; margin-bottom: 1.5rem;'>Create Account</h3>", unsafe_allow_html=True)
-            new_username = st.text_input("Username", key="signup_username")
-            new_password = st.text_input("Password", type="password", key="signup_password")
-            confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm")
-            submit = st.form_submit_button("Sign Up", use_container_width=True)
-            
-            if submit:
-                if new_username and new_password and confirm_password:
-                    if new_password != confirm_password:
-                        st.error("Passwords do not match")
-                    elif len(new_password) < 6:
-                        st.error("Password must be at least 6 characters")
-                    else:
-                        if create_user(new_username, new_password):
-                            st.success("Account created successfully! Please login.")
+            with st.form("login_form", clear_on_submit=False):
+                username = st.text_input("👤 Username", key="login_username", placeholder="Enter your username")
+                password = st.text_input("🔒 Password", type="password", key="login_password", placeholder="Enter your password")
+                
+                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                
+                submit = st.form_submit_button("Login", use_container_width=True, type="primary")
+                
+                if submit:
+                    if username and password:
+                        user_id = authenticate_user(username, password)
+                        if user_id:
+                            st.session_state.logged_in = True
+                            st.session_state.user_id = user_id
+                            st.session_state.username = username
+                            st.session_state.selected_month = get_current_month()
+                            st.success("✅ Login successful!")
+                            st.rerun()
                         else:
-                            st.error("Username already exists")
-                else:
-                    st.error("Please fill all fields")
-        st.markdown("</div>", unsafe_allow_html=True)
+                            st.error("❌ Invalid username or password")
+                    else:
+                        st.error("⚠️ Please enter both username and password")
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        with tab2:
+            st.markdown("<div class='login-container'>", unsafe_allow_html=True)
+            st.markdown("""
+            <div style='text-align: center; margin-bottom: 1.5rem;'>
+                <h3 class='login-title'>Create Account</h3>
+                <p class='login-subtitle'>Start tracking your budget today</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            with st.form("signup_form", clear_on_submit=True):
+                new_username = st.text_input("👤 Username", key="signup_username", placeholder="Choose a username")
+                new_password = st.text_input("🔒 Password", type="password", key="signup_password", placeholder="Create a password (min 6 characters)")
+                confirm_password = st.text_input("🔒 Confirm Password", type="password", key="signup_confirm", placeholder="Confirm your password")
+                
+                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                
+                submit = st.form_submit_button("Sign Up", use_container_width=True, type="primary")
+                
+                if submit:
+                    if new_username and new_password and confirm_password:
+                        if new_password != confirm_password:
+                            st.error("❌ Passwords do not match")
+                        elif len(new_password) < 6:
+                            st.error("⚠️ Password must be at least 6 characters")
+                        elif len(new_username) < 3:
+                            st.error("⚠️ Username must be at least 3 characters")
+                        else:
+                            if create_user(new_username, new_password):
+                                st.success("✅ Account created successfully! Please switch to Login tab.")
+                            else:
+                                st.error("❌ Username already exists")
+                    else:
+                        st.error("⚠️ Please fill all fields")
+            st.markdown("</div>", unsafe_allow_html=True)
     
     st.stop()
 
@@ -491,6 +548,8 @@ with col3:
 
 st.markdown(f"<p style='text-align: center; color: #8b949e; font-size: 0.875rem; margin-top: -0.5rem;'>{MONTH}</p>", unsafe_allow_html=True)
 
+st.markdown("---")
+
 # Income editor and download button
 col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
@@ -589,7 +648,7 @@ for group in st.session_state.budgets:
                         save_data()
                         st.rerun()
 
-st.divider()
+st.markdown("---")
 
 # ---- LOANS & LENDING ----
 col1, col2 = st.columns(2)
@@ -675,7 +734,7 @@ with col3:
     </div>
     """, unsafe_allow_html=True)
 
-st.divider()
+st.markdown("---")
 
 # ---- MAIN METRICS ----
 spent = total_spent()
@@ -712,7 +771,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.divider()
+st.markdown("---")
 
 # ---- WEEKLY SPENDING RECOMMENDATIONS ----
 if st.session_state.selected_month == get_current_month():
@@ -748,7 +807,7 @@ if st.session_state.selected_month == get_current_month():
                 </div>
                 """, unsafe_allow_html=True)
 
-    st.divider()
+    st.markdown("---")
 
 # ---- INSIGHTS ----
 col1, col2 = st.columns(2)
