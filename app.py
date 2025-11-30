@@ -32,6 +32,10 @@ st.markdown("""
         background: linear-gradient(135deg, #1f6feb 0%, #58a6ff 100%) !important;
         color: white !important;
         border: none !important;
+        font-weight: 600;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #1158c7 0%, #1f6feb 100%) !important;
     }
     .weekly-card {
         background: #161b22;
@@ -56,6 +60,21 @@ st.markdown("""
         color: #8b949e;
         font-size: 0.65rem;
         margin-top: 0.25rem;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: #0d1117;
+        padding: 4px;
+        border-radius: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 6px;
+        color: #8b949e;
+        padding: 0.5rem 1.5rem;
+    }
+    .stTabs [aria-selected="true"] {
+        background: #1f6feb !important;
+        color: #ffffff !important;
     }
     /* Hide Streamlit branding */
     #MainMenu, footer, header { visibility: hidden; }
@@ -99,6 +118,12 @@ def init_db():
         )
     ''')
     
+    # Add variable_categories column if it doesn't exist (for existing databases)
+    try:
+        cursor.execute('SELECT variable_categories FROM monthly_budgets LIMIT 1')
+    except sqlite3.OperationalError:
+        cursor.execute('ALTER TABLE monthly_budgets ADD COLUMN variable_categories TEXT')
+    
     conn.commit()
     return conn
 
@@ -131,25 +156,31 @@ def get_current_month():
     return datetime.now().strftime("%Y-%m")
 
 def load_monthly_data(user_id, month_year):
-    cursor = db_conn.cursor()
-    cursor.execute('SELECT income, categories, variable_categories FROM monthly_budgets WHERE user_id = ? AND month_year = ?', 
-                  (user_id, month_year))
-    result = cursor.fetchone()
-    if result:
-        return {
-            'income': result[0], 
-            'categories': json.loads(result[1]),
-            'variable_categories': json.loads(result[2]) if result[2] else []
-        }
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute('SELECT income, categories, variable_categories FROM monthly_budgets WHERE user_id = ? AND month_year = ?', 
+                      (user_id, month_year))
+        result = cursor.fetchone()
+        if result:
+            return {
+                'income': result[0], 
+                'categories': json.loads(result[1]),
+                'variable_categories': json.loads(result[2]) if result[2] else []
+            }
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
     return None
 
 def save_monthly_data(user_id, month_year, income, categories, variable_categories):
-    cursor = db_conn.cursor()
-    cursor.execute('''
-        INSERT OR REPLACE INTO monthly_budgets (user_id, month_year, income, categories, variable_categories)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (user_id, month_year, income, json.dumps(categories), json.dumps(variable_categories)))
-    db_conn.commit()
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO monthly_budgets (user_id, month_year, income, categories, variable_categories)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (user_id, month_year, income, json.dumps(categories), json.dumps(variable_categories)))
+        db_conn.commit()
+    except Exception as e:
+        st.error(f"Error saving data: {e}")
 
 def get_available_months(user_id):
     cursor = db_conn.cursor()
@@ -167,38 +198,72 @@ if 'variable_categories' not in st.session_state:
 
 # ---- LOGIN ----
 if not st.session_state.logged_in:
-    st.markdown("<h1 style='text-align: center; margin: 2rem 0;'>💰 Budget Tracker</h1>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style='text-align: center; margin: 2rem 0 1rem 0;'>
+        <h1 style='font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>Budget Tracker</h1>
+        <p style='color: #8b949e; font-size: 0.9rem;'>Manage your finances with ease</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["Login", "Sign Up"])
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        tab1, tab2 = st.tabs(["🔐 Login", "✨ Sign Up"])
+        
+        with tab1:
+            st.markdown("""
+            <div style='text-align: center; margin: 1rem 0;'>
+                <h3 style='color: #f0f6fc; font-size: 1.25rem;'>Welcome Back</h3>
+                <p style='color: #8b949e; font-size: 0.8rem;'>Sign in to continue</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            with st.form("login_form"):
+                username = st.text_input("👤 Username", placeholder="Enter your username")
+                password = st.text_input("🔒 Password", type="password", placeholder="Enter your password")
+                
+                st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
+                
+                if st.form_submit_button("Login", use_container_width=True, type="primary"):
+                    if username and password:
+                        user_id = authenticate_user(username, password)
+                        if user_id:
+                            st.session_state.logged_in = True
+                            st.session_state.user_id = user_id
+                            st.session_state.username = username
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid username or password")
+                    else:
+                        st.error("⚠️ Please fill all fields")
+        
+        with tab2:
+            st.markdown("""
+            <div style='text-align: center; margin: 1rem 0;'>
+                <h3 style='color: #f0f6fc; font-size: 1.25rem;'>Create Account</h3>
+                <p style='color: #8b949e; font-size: 0.8rem;'>Start tracking your budget today</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            with st.form("signup_form"):
+                new_username = st.text_input("👤 Username", placeholder="Choose a username")
+                new_password = st.text_input("🔒 Password", type="password", placeholder="Min 6 characters")
+                confirm = st.text_input("🔒 Confirm Password", type="password", placeholder="Confirm your password")
+                
+                st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
+                
+                if st.form_submit_button("Sign Up", use_container_width=True, type="primary"):
+                    if new_username and new_password and confirm:
+                        if new_password != confirm:
+                            st.error("❌ Passwords don't match")
+                        elif len(new_password) < 6:
+                            st.error("⚠️ Password must be 6+ characters")
+                        elif create_user(new_username, new_password):
+                            st.success("✅ Account created! Please switch to Login tab.")
+                        else:
+                            st.error("❌ Username already exists")
+                    else:
+                        st.error("⚠️ Please fill all fields")
     
-    with tab1:
-        with st.form("login_form"):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            if st.form_submit_button("Login", use_container_width=True, type="primary"):
-                user_id = authenticate_user(username, password)
-                if user_id:
-                    st.session_state.logged_in = True
-                    st.session_state.user_id = user_id
-                    st.session_state.username = username
-                    st.rerun()
-                else:
-                    st.error("Invalid credentials")
-    
-    with tab2:
-        with st.form("signup_form"):
-            new_username = st.text_input("Username")
-            new_password = st.text_input("Password", type="password")
-            confirm = st.text_input("Confirm Password", type="password")
-            if st.form_submit_button("Sign Up", use_container_width=True, type="primary"):
-                if new_password != confirm:
-                    st.error("Passwords don't match")
-                elif len(new_password) < 6:
-                    st.error("Password must be 6+ characters")
-                elif create_user(new_username, new_password):
-                    st.success("Account created! Please login.")
-                else:
-                    st.error("Username already exists")
     st.stop()
 
 # ---- LOAD DATA ----
@@ -226,7 +291,7 @@ if 'data_loaded' not in st.session_state or st.session_state.get('last_month') !
 # ---- HEADER ----
 col1, col2 = st.columns([1, 3])
 with col1:
-    if st.button("Logout", use_container_width=True):
+    if st.button("🚪 Logout", use_container_width=True):
         st.session_state.logged_in = False
         st.rerun()
 
@@ -239,9 +304,8 @@ with col2:
     options = {datetime.strptime(m, "%Y-%m").strftime("%b %Y"): m for m in months}
     current_display = [k for k, v in options.items() if v == st.session_state.selected_month][0]
     
-    selected = st.selectbox("", list(options.keys()), 
-                           index=list(options.keys()).index(current_display),
-                           label_visibility="collapsed")
+    selected = st.selectbox("📅 Month", list(options.keys()), 
+                           index=list(options.keys()).index(current_display))
     
     if options[selected] != st.session_state.selected_month:
         st.session_state.selected_month = options[selected]
