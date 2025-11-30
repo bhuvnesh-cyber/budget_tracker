@@ -72,13 +72,28 @@ st.markdown("""
         font-weight: 600;
         margin-top: 0.25rem;
     }
+    /* Hide default Streamlit elements on login page */
+    [data-testid="stForm"] {
+        background: transparent;
+        border: none;
+    }
+    /* Style form buttons */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #1f6feb 0%, #58a6ff 100%) !important;
+        color: white !important;
+        border: none !important;
+        font-weight: 600;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #1158c7 0%, #1f6feb 100%) !important;
+    }
     .login-container {
         background: linear-gradient(135deg, #161b22 0%, #1a1f28 100%);
         border: 1px solid #30363d;
         border-radius: 16px;
         padding: 2.5rem;
         max-width: 420px;
-        margin: 3rem auto;
+        margin: 1rem auto;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     }
     .login-header {
@@ -299,7 +314,7 @@ if 'selected_month' not in st.session_state:
 # ---- LOGIN/SIGNUP PAGE ----
 if not st.session_state.logged_in:
     st.markdown("""
-    <div class='login-header' style='margin-top: 3rem;'>
+    <div class='login-header' style='margin-top: 2rem; margin-bottom: 2rem;'>
         <h1 style='font-size: 3rem; font-weight: 700; background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem;'>Budget Tracker</h1>
         <p style='color: #8b949e; font-size: 1rem;'>Manage your finances with ease</p>
     </div>
@@ -311,9 +326,8 @@ if not st.session_state.logged_in:
         tab1, tab2 = st.tabs(["🔐 Login", "✨ Sign Up"])
         
         with tab1:
-            st.markdown("<div class='login-container'>", unsafe_allow_html=True)
             st.markdown("""
-            <div style='text-align: center; margin-bottom: 1.5rem;'>
+            <div style='text-align: center; margin: 1.5rem 0;'>
                 <h3 class='login-title'>Welcome Back</h3>
                 <p class='login-subtitle'>Sign in to continue to your account</p>
             </div>
@@ -323,7 +337,7 @@ if not st.session_state.logged_in:
                 username = st.text_input("👤 Username", key="login_username", placeholder="Enter your username")
                 password = st.text_input("🔒 Password", type="password", key="login_password", placeholder="Enter your password")
                 
-                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
                 
                 submit = st.form_submit_button("Login", use_container_width=True, type="primary")
                 
@@ -341,12 +355,10 @@ if not st.session_state.logged_in:
                             st.error("❌ Invalid username or password")
                     else:
                         st.error("⚠️ Please enter both username and password")
-            st.markdown("</div>", unsafe_allow_html=True)
         
         with tab2:
-            st.markdown("<div class='login-container'>", unsafe_allow_html=True)
             st.markdown("""
-            <div style='text-align: center; margin-bottom: 1.5rem;'>
+            <div style='text-align: center; margin: 1.5rem 0;'>
                 <h3 class='login-title'>Create Account</h3>
                 <p class='login-subtitle'>Start tracking your budget today</p>
             </div>
@@ -357,7 +369,7 @@ if not st.session_state.logged_in:
                 new_password = st.text_input("🔒 Password", type="password", key="signup_password", placeholder="Create a password (min 6 characters)")
                 confirm_password = st.text_input("🔒 Confirm Password", type="password", key="signup_confirm", placeholder="Confirm your password")
                 
-                st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
                 
                 submit = st.form_submit_button("Sign Up", use_container_width=True, type="primary")
                 
@@ -376,7 +388,6 @@ if not st.session_state.logged_in:
                                 st.error("❌ Username already exists")
                     else:
                         st.error("⚠️ Please fill all fields")
-            st.markdown("</div>", unsafe_allow_html=True)
     
     st.stop()
 
