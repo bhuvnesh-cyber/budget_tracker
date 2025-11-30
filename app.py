@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 from io import BytesIO
 import json
+import sqlite3
 import os
 
 st.set_page_config(page_title="Budget Tracker", layout="centered", initial_sidebar_state="collapsed")
@@ -73,31 +74,62 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 MONTH = datetime.now().strftime("%B %Y")
-DATA_FILE = "budget_data.json"
 
-# ---- DATA SETUP WITH FILE STORAGE ----
-def load_data():
-    """Load data from JSON file"""
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, 'r') as f:
-                data = json.load(f)
-                st.session_state.income = data.get('income', 104000)
-                st.session_state.budgets = data.get('budgets', get_default_budgets())
-                st.session_state.loans = data.get('loans', {})
-                st.session_state.lending = data.get('lending', {})
-        except Exception as e:
-            st.error(f"Error loading data: {e}")
-            initialize_default_data()
-    else:
-        initialize_default_data()
+# ---- DATABASE SETUP ----
+@st.cache_resource
+def init_db():
+    """Initialize SQLite database"""
+    # Use a persistent path on Streamlit Cloud
+    db_path = os.path.join(os.path.dirname(__file__), 'budget_data.db')
+    
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    cursor = conn.cursor()
+    
+    # Create table if not exists
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS budget_data (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_type TEXT NOT NULL UNIQUE,
+            data_value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    return conn
 
-def initialize_default_data():
-    """Initialize with default data"""
-    st.session_state.income = 104000
-    st.session_state.budgets = get_default_budgets()
-    st.session_state.loans = {}
-    st.session_state.lending = {}
+db_conn = init_db()
+
+# ---- DATABASE FUNCTIONS ----
+def load_from_db(data_type):
+    """Load data from SQLite"""
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute('SELECT data_value FROM budget_data WHERE data_type = ?', (data_type,))
+        result = cursor.fetchone()
+        if result:
+            return json.loads(result[0])
+        return None
+    except Exception as e:
+        st.error(f"Error loading {data_type}: {e}")
+        return None
+
+def save_to_db(data_type, data_value):
+    """Save data to SQLite"""
+    try:
+        cursor = db_conn.cursor()
+        json_data = json.dumps(data_value)
+        
+        # Use INSERT OR REPLACE to update if exists
+        cursor.execute('''
+            INSERT OR REPLACE INTO budget_data (data_type, data_value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        ''', (data_type, json_data))
+        
+        db_conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"Error saving {data_type}: {e}")
+        return False
 
 def get_default_budgets():
     """Return default budget structure"""
@@ -129,19 +161,31 @@ def get_default_budgets():
         }
     }
 
+# ---- DATA SETUP ----
+def load_data():
+    """Load data from database"""
+    if 'income' not in st.session_state:
+        income = load_from_db('income')
+        st.session_state.income = income if income else 104000
+    
+    if 'budgets' not in st.session_state:
+        budgets = load_from_db('budgets')
+        st.session_state.budgets = budgets if budgets else get_default_budgets()
+    
+    if 'loans' not in st.session_state:
+        loans = load_from_db('loans')
+        st.session_state.loans = loans if loans else {}
+    
+    if 'lending' not in st.session_state:
+        lending = load_from_db('lending')
+        st.session_state.lending = lending if lending else {}
+
 def save_data():
-    """Save data to JSON file"""
-    try:
-        data = {
-            'income': st.session_state.income,
-            'budgets': st.session_state.budgets,
-            'loans': st.session_state.loans,
-            'lending': st.session_state.lending
-        }
-        with open(DATA_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
-    except Exception as e:
-        st.error(f"Failed to save data: {e}")
+    """Save all data to database"""
+    save_to_db('income', st.session_state.income)
+    save_to_db('budgets', st.session_state.budgets)
+    save_to_db('loans', st.session_state.loans)
+    save_to_db('lending', st.session_state.lending)
 
 # Load data on startup
 if 'data_loaded' not in st.session_state:
@@ -310,10 +354,7 @@ st.divider()
 # ---- WEEKLY SPENDING RECOMMENDATIONS ----
 st.markdown("<h3 style='font-size: 1.125rem; color: #f0f6fc; margin-bottom: 1rem;'>💡 Weekly Spending Guide</h3>", unsafe_allow_html=True)
 
-# Calculate remaining money after all fixed expenses
 variable_categories = ["Grocery", "Entertainment", "Travel"]
-
-# Get budgets and spent for variable expenses
 variable_budgets = {}
 variable_spent = {}
 for group in st.session_state.budgets:
@@ -322,9 +363,8 @@ for group in st.session_state.budgets:
             variable_budgets[name] = data["budget"]
             variable_spent[name] = data["spent"]
 
-# Calculate weekly allowances
 col1, col2, col3 = st.columns(3)
-weeks_remaining = 4  # Assuming 4 weeks in a month
+weeks_remaining = 4
 
 for idx, (col, category) in enumerate(zip([col1, col2, col3], variable_categories)):
     if category in variable_budgets:
@@ -350,7 +390,6 @@ st.divider()
 col1, col2 = st.columns(2)
 
 with col1:
-    # Category breakdown
     category_data = []
     for group in st.session_state.budgets:
         group_spent = sum(v["spent"] for v in st.session_state.budgets[group].values())
@@ -406,7 +445,6 @@ with col1:
         st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    # Spending composition
     spending_data = []
     for group in st.session_state.budgets:
         group_spent = sum(v["spent"] for v in st.session_state.budgets[group].values())
@@ -452,7 +490,6 @@ for group in st.session_state.budgets:
             
             col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 2, 2, 1])
             
-            # Checkbox to mark as paid
             with col1:
                 paid = st.checkbox("", value=is_paid, key=f"paid-{group}-{name}", label_visibility="collapsed")
                 if paid and not is_paid:
@@ -499,7 +536,6 @@ for group in st.session_state.budgets:
                     save_data()
                     st.rerun()
         
-        # Add new item within category
         with st.form(f"add_{group}", clear_on_submit=True):
             col1, col2, col3 = st.columns([3, 2, 2])
             with col1:
