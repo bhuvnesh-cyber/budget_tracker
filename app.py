@@ -501,6 +501,42 @@ MONTH = datetime.strptime(st.session_state.selected_month, "%Y-%m").strftime("%B
 
 col1, col2, col3 = st.columns([2, 3, 2])
 
+col1, col2, col3 = st.columns([2, 3, 2])
+
+with col1:
+    st.markdown("<div style='margin-top: 18px;'></div>", unsafe_allow_html=True)
+    if st.button("🚪 Logout", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.user_id = None
+        st.session_state.username = None
+        st.rerun()
+
+with col2:
+    st.markdown("<div style='margin-top: 8px;'></div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style='text-align: center;'>
+        <h1 style='font-size: 2rem; font-weight: 700;
+                   background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%);
+                   -webkit-background-clip: text;
+                   -webkit-text-fill-color: transparent;
+                   margin: 0;'>
+            Budget Tracker
+        </h1>
+        <p style='color: #8b949e; font-size: 0.75rem; margin: 0;'>@{st.session_state.username}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col3:
+    st.markdown("<div style='margin-top: 18px;'></div>", unsafe_allow_html=True)
+    selected_display = st.selectbox(
+        "Month",
+        options=list(month_options.keys()),
+        index=list(month_options.keys()).index(current_display),
+        key="month_selector",
+        label_visibility="collapsed"
+    )
+
+
 with col1:
     if st.button("🚪 Logout", use_container_width=True):
         st.session_state.logged_in = False
