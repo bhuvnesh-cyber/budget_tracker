@@ -582,41 +582,6 @@ with col3:
 
 SALARY = st.session_state.income
 
-# ---- QUICK STATS ----
-st.markdown("<h3 style='font-size: 1rem; color: #8b949e; margin-bottom: 0.5rem;'>Quick Stats</h3>", unsafe_allow_html=True)
-
-col1, col2, col3 = st.columns(3)
-total_budgeted = total_budget()
-budget_utilization = (total_spent() / total_budgeted * 100) if total_budgeted > 0 else 0
-savings_rate = ((SALARY - total_spent() - loan_total()) / SALARY * 100) if SALARY > 0 else 0
-
-with col1:
-    st.markdown(f"""
-    <div class='stat-card'>
-        <div class='stat-label'>Budget Used</div>
-        <div class='stat-value'>{budget_utilization:.1f}%</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    st.markdown(f"""
-    <div class='stat-card'>
-        <div class='stat-label'>Savings Rate</div>
-        <div class='stat-value' style='color: {'#3fb950' if savings_rate > 20 else '#f85149'};'>{savings_rate:.1f}%</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    net_position = lending_total() - loan_total()
-    st.markdown(f"""
-    <div class='stat-card'>
-        <div class='stat-label'>Net Loan Position</div>
-        <div class='stat-value' style='color: {'#3fb950' if net_position >= 0 else '#f85149'};'>₹{abs(net_position):,}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("---")
-
 # Show warning if viewing past month
 if st.session_state.selected_month != get_current_month():
     st.info(f"📅 Viewing historical data for {MONTH}")
@@ -747,7 +712,40 @@ with col2:
                 save_data()
                 st.rerun()()
 
+# ---- QUICK STATS ----
+st.markdown("<h3 style='font-size: 1rem; color: #8b949e; margin-bottom: 0.5rem;'>Quick Stats</h3>", unsafe_allow_html=True)
 
+col1, col2, col3 = st.columns(3)
+total_budgeted = total_budget()
+budget_utilization = (total_spent() / total_budgeted * 100) if total_budgeted > 0 else 0
+savings_rate = ((SALARY - total_spent() - loan_total()) / SALARY * 100) if SALARY > 0 else 0
+
+with col1:
+    st.markdown(f"""
+    <div class='stat-card'>
+        <div class='stat-label'>Budget Used</div>
+        <div class='stat-value'>{budget_utilization:.1f}%</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown(f"""
+    <div class='stat-card'>
+        <div class='stat-label'>Savings Rate</div>
+        <div class='stat-value' style='color: {'#3fb950' if savings_rate > 20 else '#f85149'};'>{savings_rate:.1f}%</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col3:
+    net_position = lending_total() - loan_total()
+    st.markdown(f"""
+    <div class='stat-card'>
+        <div class='stat-label'>Net Loan Position</div>
+        <div class='stat-value' style='color: {'#3fb950' if net_position >= 0 else '#f85149'};'>₹{abs(net_position):,}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("---")
 
 # ---- MAIN METRICS ----
 spent = total_spent()
