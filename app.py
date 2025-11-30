@@ -559,7 +559,7 @@ with col3:
 
 st.markdown(f"<p style='text-align: center; color: #8b949e; font-size: 0.875rem; margin-top: -0.5rem;'>{MONTH}</p>", unsafe_allow_html=True)
 
-st.markdown("---")
+st.divider()
 
 # Income editor and download button
 col1, col2, col3 = st.columns([1, 1, 1])
@@ -659,7 +659,7 @@ for group in st.session_state.budgets:
                         save_data()
                         st.rerun()
 
-st.markdown("---")
+st.divider()
 
 # ---- LOANS & LENDING ----
 col1, col2 = st.columns(2)
@@ -745,7 +745,7 @@ with col3:
     </div>
     """, unsafe_allow_html=True)
 
-st.markdown("---")
+st.divider()
 
 # ---- MAIN METRICS ----
 spent = total_spent()
@@ -782,7 +782,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("---")
+st.divider()
 
 # ---- WEEKLY SPENDING RECOMMENDATIONS ----
 if st.session_state.selected_month == get_current_month():
@@ -818,7 +818,7 @@ if st.session_state.selected_month == get_current_month():
                 </div>
                 """, unsafe_allow_html=True)
 
-    st.markdown("---")
+    st.divider()
 
 # ---- INSIGHTS ----
 col1, col2 = st.columns(2)
