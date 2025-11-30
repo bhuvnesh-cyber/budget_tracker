@@ -6,6 +6,8 @@ from io import BytesIO
 import json
 import sqlite3
 import os
+import hashlib
+import hmac
 
 st.set_page_config(page_title="Budget Tracker", layout="centered", initial_sidebar_state="collapsed")
 
@@ -70,66 +72,159 @@ st.markdown("""
         font-weight: 600;
         margin-top: 0.25rem;
     }
+    .login-container {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 12px;
+        padding: 2rem;
+        max-width: 400px;
+        margin: 4rem auto;
+    }
 </style>
 """, unsafe_allow_html=True)
-
-MONTH = datetime.now().strftime("%B %Y")
 
 # ---- DATABASE SETUP ----
 @st.cache_resource
 def init_db():
     """Initialize SQLite database"""
-    # Use a persistent path on Streamlit Cloud
     db_path = os.path.join(os.path.dirname(__file__), 'budget_data.db')
     
     conn = sqlite3.connect(db_path, check_same_thread=False)
     cursor = conn.cursor()
     
-    # Create table if not exists
+    # Users table
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS budget_data (
+        CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data_type TEXT NOT NULL UNIQUE,
-            data_value TEXT NOT NULL,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # Monthly budget data table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS monthly_budgets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            month_year TEXT NOT NULL,
+            income INTEGER NOT NULL,
+            budgets TEXT NOT NULL,
+            loans TEXT NOT NULL,
+            lending TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(user_id, month_year)
+        )
+    ''')
+    
     conn.commit()
     return conn
 
 db_conn = init_db()
 
-# ---- DATABASE FUNCTIONS ----
-def load_from_db(data_type):
-    """Load data from SQLite"""
+# ---- AUTHENTICATION FUNCTIONS ----
+def hash_password(password):
+    """Hash a password for storing"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_password(password, password_hash):
+    """Verify a password against its hash"""
+    return hash_password(password) == password_hash
+
+def create_user(username, password):
+    """Create a new user"""
     try:
         cursor = db_conn.cursor()
-        cursor.execute('SELECT data_value FROM budget_data WHERE data_type = ?', (data_type,))
+        password_hash = hash_password(password)
+        cursor.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', 
+                      (username, password_hash))
+        db_conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+def authenticate_user(username, password):
+    """Authenticate a user"""
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute('SELECT id, password_hash FROM users WHERE username = ?', (username,))
         result = cursor.fetchone()
-        if result:
-            return json.loads(result[0])
+        if result and verify_password(password, result[1]):
+            return result[0]  # Return user_id
         return None
     except Exception as e:
-        st.error(f"Error loading {data_type}: {e}")
+        st.error(f"Authentication error: {e}")
         return None
 
-def save_to_db(data_type, data_value):
-    """Save data to SQLite"""
+def get_username(user_id):
+    """Get username from user_id"""
     try:
         cursor = db_conn.cursor()
-        json_data = json.dumps(data_value)
-        
-        # Use INSERT OR REPLACE to update if exists
+        cursor.execute('SELECT username FROM users WHERE id = ?', (user_id,))
+        result = cursor.fetchone()
+        return result[0] if result else None
+    except Exception as e:
+        return None
+
+# ---- MONTHLY DATA FUNCTIONS ----
+def get_current_month():
+    """Get current month in YYYY-MM format"""
+    return datetime.now().strftime("%Y-%m")
+
+def load_monthly_data(user_id, month_year):
+    """Load data for a specific month"""
+    try:
+        cursor = db_conn.cursor()
         cursor.execute('''
-            INSERT OR REPLACE INTO budget_data (data_type, data_value, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-        ''', (data_type, json_data))
+            SELECT income, budgets, loans, lending 
+            FROM monthly_budgets 
+            WHERE user_id = ? AND month_year = ?
+        ''', (user_id, month_year))
+        result = cursor.fetchone()
         
+        if result:
+            return {
+                'income': result[0],
+                'budgets': json.loads(result[1]),
+                'loans': json.loads(result[2]),
+                'lending': json.loads(result[3])
+            }
+        return None
+    except Exception as e:
+        st.error(f"Error loading monthly data: {e}")
+        return None
+
+def save_monthly_data(user_id, month_year, income, budgets, loans, lending):
+    """Save data for a specific month"""
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO monthly_budgets 
+            (user_id, month_year, income, budgets, loans, lending, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (user_id, month_year, income, 
+              json.dumps(budgets), json.dumps(loans), json.dumps(lending)))
         db_conn.commit()
         return True
     except Exception as e:
-        st.error(f"Error saving {data_type}: {e}")
+        st.error(f"Error saving monthly data: {e}")
         return False
+
+def get_available_months(user_id):
+    """Get list of months with data for a user"""
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute('''
+            SELECT month_year 
+            FROM monthly_budgets 
+            WHERE user_id = ? 
+            ORDER BY month_year DESC
+        ''', (user_id,))
+        results = cursor.fetchall()
+        return [row[0] for row in results]
+    except Exception as e:
+        return []
 
 def get_default_budgets():
     """Return default budget structure"""
@@ -161,36 +256,120 @@ def get_default_budgets():
         }
     }
 
-# ---- DATA SETUP ----
+# ---- SESSION STATE INITIALIZATION ----
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'user_id' not in st.session_state:
+    st.session_state.user_id = None
+if 'selected_month' not in st.session_state:
+    st.session_state.selected_month = get_current_month()
+
+# ---- LOGIN/SIGNUP PAGE ----
+if not st.session_state.logged_in:
+    st.markdown("""
+    <div style='text-align: center; margin-bottom: 2rem;'>
+        <h1 style='font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>Budget Tracker</h1>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["Login", "Sign Up"])
+    
+    with tab1:
+        st.markdown("<div class='login-container'>", unsafe_allow_html=True)
+        with st.form("login_form"):
+            st.markdown("<h3 style='text-align: center; margin-bottom: 1.5rem;'>Welcome Back</h3>", unsafe_allow_html=True)
+            username = st.text_input("Username", key="login_username")
+            password = st.text_input("Password", type="password", key="login_password")
+            submit = st.form_submit_button("Login", use_container_width=True)
+            
+            if submit:
+                if username and password:
+                    user_id = authenticate_user(username, password)
+                    if user_id:
+                        st.session_state.logged_in = True
+                        st.session_state.user_id = user_id
+                        st.session_state.username = username
+                        st.session_state.selected_month = get_current_month()
+                        st.rerun()
+                    else:
+                        st.error("Invalid username or password")
+                else:
+                    st.error("Please enter both username and password")
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    with tab2:
+        st.markdown("<div class='login-container'>", unsafe_allow_html=True)
+        with st.form("signup_form"):
+            st.markdown("<h3 style='text-align: center; margin-bottom: 1.5rem;'>Create Account</h3>", unsafe_allow_html=True)
+            new_username = st.text_input("Username", key="signup_username")
+            new_password = st.text_input("Password", type="password", key="signup_password")
+            confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm")
+            submit = st.form_submit_button("Sign Up", use_container_width=True)
+            
+            if submit:
+                if new_username and new_password and confirm_password:
+                    if new_password != confirm_password:
+                        st.error("Passwords do not match")
+                    elif len(new_password) < 6:
+                        st.error("Password must be at least 6 characters")
+                    else:
+                        if create_user(new_username, new_password):
+                            st.success("Account created successfully! Please login.")
+                        else:
+                            st.error("Username already exists")
+                else:
+                    st.error("Please fill all fields")
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.stop()
+
+# ---- LOAD DATA FOR LOGGED IN USER ----
 def load_data():
-    """Load data from database"""
-    if 'income' not in st.session_state:
-        income = load_from_db('income')
-        st.session_state.income = income if income else 104000
+    """Load data from database for current month"""
+    user_id = st.session_state.user_id
+    month_year = st.session_state.selected_month
     
-    if 'budgets' not in st.session_state:
-        budgets = load_from_db('budgets')
-        st.session_state.budgets = budgets if budgets else get_default_budgets()
+    # Check if we're viewing current month
+    is_current_month = (month_year == get_current_month())
     
-    if 'loans' not in st.session_state:
-        loans = load_from_db('loans')
-        st.session_state.loans = loans if loans else {}
+    # Try to load existing data
+    monthly_data = load_monthly_data(user_id, month_year)
     
-    if 'lending' not in st.session_state:
-        lending = load_from_db('lending')
-        st.session_state.lending = lending if lending else {}
+    if monthly_data:
+        st.session_state.income = monthly_data['income']
+        st.session_state.budgets = monthly_data['budgets']
+        st.session_state.loans = monthly_data['loans']
+        st.session_state.lending = monthly_data['lending']
+    else:
+        # If viewing current month and no data exists, use defaults
+        if is_current_month:
+            st.session_state.income = 104000
+            st.session_state.budgets = get_default_budgets()
+            st.session_state.loans = {}
+            st.session_state.lending = {}
+        else:
+            # For past months with no data, show empty state
+            st.session_state.income = 0
+            st.session_state.budgets = {}
+            st.session_state.loans = {}
+            st.session_state.lending = {}
 
 def save_data():
     """Save all data to database"""
-    save_to_db('income', st.session_state.income)
-    save_to_db('budgets', st.session_state.budgets)
-    save_to_db('loans', st.session_state.loans)
-    save_to_db('lending', st.session_state.lending)
+    save_monthly_data(
+        st.session_state.user_id,
+        st.session_state.selected_month,
+        st.session_state.income,
+        st.session_state.budgets,
+        st.session_state.loans,
+        st.session_state.lending
+    )
 
-# Load data on startup
-if 'data_loaded' not in st.session_state:
+# Load data on startup or month change
+if 'data_loaded' not in st.session_state or st.session_state.get('last_loaded_month') != st.session_state.selected_month:
     load_data()
     st.session_state.data_loaded = True
+    st.session_state.last_loaded_month = st.session_state.selected_month
 
 # ---- HELPERS ----
 def total_spent():
@@ -229,7 +408,8 @@ def export_to_excel():
                     'Spent': data['spent'],
                     'Remaining': data['budget'] - data['spent']
                 })
-        pd.DataFrame(budget_rows).to_excel(writer, sheet_name='Budget Details', index=False)
+        if budget_rows:
+            pd.DataFrame(budget_rows).to_excel(writer, sheet_name='Budget Details', index=False)
         
         # Loans sheet
         if st.session_state.loans:
@@ -248,13 +428,68 @@ def export_to_excel():
     output.seek(0)
     return output
 
-# ---- HEADER ----
-st.markdown(f"""
-<div style='text-align: center; margin-bottom: 2rem;'>
-    <h1 style='font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.25rem;'>Budget Tracker</h1>
-    <p style='color: #8b949e; font-size: 0.875rem; margin: 0;'>{MONTH}</p>
-</div>
-""", unsafe_allow_html=True)
+# ---- HEADER WITH LOGOUT AND MONTH SELECTOR ----
+MONTH = datetime.strptime(st.session_state.selected_month, "%Y-%m").strftime("%B %Y")
+
+col1, col2, col3 = st.columns([2, 3, 2])
+
+with col1:
+    if st.button("🚪 Logout", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.user_id = None
+        st.session_state.username = None
+        st.rerun()
+
+with col2:
+    st.markdown(f"""
+    <div style='text-align: center;'>
+        <h1 style='font-size: 2rem; font-weight: 700; background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0;'>Budget Tracker</h1>
+        <p style='color: #8b949e; font-size: 0.75rem; margin: 0;'>@{st.session_state.username}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col3:
+    # Get available months
+    available_months = get_available_months(st.session_state.user_id)
+    current_month = get_current_month()
+    
+    # Always include current month in the list
+    if current_month not in available_months:
+        available_months.insert(0, current_month)
+    
+    # Create display options
+    month_options = {}
+    for month in available_months:
+        display_name = datetime.strptime(month, "%Y-%m").strftime("%B %Y")
+        if month == current_month:
+            display_name += " (Current)"
+        month_options[display_name] = month
+    
+    # Find current selection
+    current_display = None
+    for display, value in month_options.items():
+        if value == st.session_state.selected_month:
+            current_display = display
+            break
+    
+    if current_display is None:
+        current_display = list(month_options.keys())[0]
+    
+    selected_display = st.selectbox(
+        "Month",
+        options=list(month_options.keys()),
+        index=list(month_options.keys()).index(current_display),
+        key="month_selector",
+        label_visibility="collapsed"
+    )
+    
+    selected_month_value = month_options[selected_display]
+    
+    if selected_month_value != st.session_state.selected_month:
+        st.session_state.selected_month = selected_month_value
+        st.rerun()
+
+st.markdown(f"<p style='text-align: center; color: #8b949e; font-size: 0.875rem; margin-top: -0.5rem;'>{MONTH}</p>", unsafe_allow_html=True)
 
 # Income editor and download button
 col1, col2, col3 = st.columns([1, 1, 1])
@@ -270,213 +505,16 @@ with col3:
     st.download_button(
         label="📥 Download Excel",
         data=excel_file,
-        file_name=f"budget_tracker_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        file_name=f"budget_tracker_{st.session_state.selected_month}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
 
 SALARY = st.session_state.income
 
-st.divider()
-
-# ---- QUICK STATS ----
-st.markdown("<h3 style='font-size: 1rem; color: #8b949e; margin-bottom: 0.5rem;'>Quick Stats</h3>", unsafe_allow_html=True)
-
-col1, col2, col3 = st.columns(3)
-total_budgeted = total_budget()
-budget_utilization = (total_spent() / total_budgeted * 100) if total_budgeted > 0 else 0
-savings_rate = ((SALARY - total_spent() - loan_total()) / SALARY * 100) if SALARY > 0 else 0
-
-with col1:
-    st.markdown(f"""
-    <div class='stat-card'>
-        <div class='stat-label'>Budget Used</div>
-        <div class='stat-value'>{budget_utilization:.1f}%</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    st.markdown(f"""
-    <div class='stat-card'>
-        <div class='stat-label'>Savings Rate</div>
-        <div class='stat-value' style='color: {'#3fb950' if savings_rate > 20 else '#f85149'};'>{savings_rate:.1f}%</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    net_position = lending_total() - loan_total()
-    st.markdown(f"""
-    <div class='stat-card'>
-        <div class='stat-label'>Net Loan Position</div>
-        <div class='stat-value' style='color: {'#3fb950' if net_position >= 0 else '#f85149'};'>₹{abs(net_position):,}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.divider()
-
-# ---- MAIN METRICS ----
-spent = total_spent()
-loans = loan_total()
-lending = lending_total()
-remaining = SALARY - spent - loans
-
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("Salary", f"₹{SALARY:,}")
-with col2:
-    st.metric("Spent", f"₹{spent:,}")
-with col3:
-    st.metric("Loans", f"₹{loans:,}")
-with col4:
-    color = "normal" if remaining >= 0 else "inverse"
-    st.metric("Remaining", f"₹{remaining:,}", delta_color=color)
-
-# Enhanced progress bar
-progress = min((spent + loans) / SALARY, 1.0) if SALARY > 0 else 0
-allocated_amount = spent + loans
-
-st.markdown(f"""
-<div style='background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 1rem; margin: 1rem 0;'>
-    <div style='display: flex; justify-content: space-between; margin-bottom: 0.5rem;'>
-        <span style='color: #8b949e; font-size: 0.875rem;'>Salary Allocated</span>
-        <span style='color: #f0f6fc; font-weight: 600;'>₹{allocated_amount:,} / ₹{SALARY:,}</span>
-    </div>
-    <div style='background: #0d1117; border-radius: 4px; height: 24px; overflow: hidden; border: 1px solid #30363d;'>
-        <div style='background: linear-gradient(90deg, #1f6feb 0%, #58a6ff 100%); height: 100%; width: {progress*100}%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px;'>
-            <span style='color: white; font-size: 0.75rem; font-weight: 600;'>{progress*100:.1f}%</span>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-st.divider()
-
-# ---- WEEKLY SPENDING RECOMMENDATIONS ----
-st.markdown("<h3 style='font-size: 1.125rem; color: #f0f6fc; margin-bottom: 1rem;'>💡 Weekly Spending Guide</h3>", unsafe_allow_html=True)
-
-variable_categories = ["Grocery", "Entertainment", "Travel"]
-variable_budgets = {}
-variable_spent = {}
-for group in st.session_state.budgets:
-    for name, data in st.session_state.budgets[group].items():
-        if name in variable_categories:
-            variable_budgets[name] = data["budget"]
-            variable_spent[name] = data["spent"]
-
-col1, col2, col3 = st.columns(3)
-weeks_remaining = 4
-
-for idx, (col, category) in enumerate(zip([col1, col2, col3], variable_categories)):
-    if category in variable_budgets:
-        budget = variable_budgets[category]
-        spent = variable_spent[category]
-        remaining = budget - spent
-        weekly_allowance = remaining / weeks_remaining if weeks_remaining > 0 else 0
-        
-        with col:
-            color = "#3fb950" if remaining > 0 else "#f85149"
-            st.markdown(f"""
-            <div class='stat-card'>
-                <div class='stat-label'>{category}</div>
-                <div style='color: #8b949e; font-size: 0.7rem; margin-top: 0.25rem;'>Budget: ₹{budget:,} | Spent: ₹{spent:,}</div>
-                <div class='stat-value' style='color: {color}; font-size: 1rem; margin-top: 0.5rem;'>₹{int(weekly_allowance):,}/week</div>
-                <div style='color: #8b949e; font-size: 0.65rem; margin-top: 0.25rem;'>Remaining: ₹{int(remaining):,}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-st.divider()
-
-# ---- INSIGHTS ----
-col1, col2 = st.columns(2)
-
-with col1:
-    category_data = []
-    for group in st.session_state.budgets:
-        group_spent = sum(v["spent"] for v in st.session_state.budgets[group].values())
-        group_budget = sum(v["budget"] for v in st.session_state.budgets[group].values())
-        if group_budget > 0:
-            category_data.append({
-                "Category": group,
-                "Spent": group_spent,
-                "Budget": group_budget,
-                "Remaining": group_budget - group_spent
-            })
-    
-    if category_data:
-        df = pd.DataFrame(category_data)
-        
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            y=df["Category"],
-            x=df["Spent"],
-            name="Spent",
-            orientation='h',
-            marker=dict(color='#58a6ff'),
-            text=[f"₹{x:,}" for x in df["Spent"]],
-            textposition='inside',
-            textfont=dict(color='white', size=11),
-            hovertemplate='%{y}<br>Spent: ₹%{x:,}<extra></extra>'
-        ))
-        fig.add_trace(go.Bar(
-            y=df["Category"],
-            x=df["Remaining"],
-            name="Remaining",
-            orientation='h',
-            marker=dict(color='#30363d'),
-            text=[f"₹{x:,}" if x > 0 else "" for x in df["Remaining"]],
-            textposition='inside',
-            textfont=dict(color='#8b949e', size=11),
-            hovertemplate='%{y}<br>Remaining: ₹%{x:,}<extra></extra>'
-        ))
-        
-        fig.update_layout(
-            barmode='stack',
-            height=220,
-            margin=dict(l=0, r=0, t=30, b=0),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#8b949e', size=11),
-            showlegend=False,
-            xaxis=dict(showgrid=False, showticklabels=False),
-            yaxis=dict(showgrid=False),
-            title=dict(text="Budget by Category", font=dict(size=14, color='#f0f6fc'))
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-
-with col2:
-    spending_data = []
-    for group in st.session_state.budgets:
-        group_spent = sum(v["spent"] for v in st.session_state.budgets[group].values())
-        if group_spent > 0:
-            spending_data.append({"Type": group, "Amount": group_spent})
-    
-    if loans > 0:
-        spending_data.append({"Type": "Loans", "Amount": loans})
-    
-    if spending_data:
-        df_spend = pd.DataFrame(spending_data)
-        
-        fig2 = go.Figure(data=[go.Pie(
-            labels=df_spend["Type"],
-            values=df_spend["Amount"],
-            hole=.6,
-            marker=dict(colors=['#58a6ff', '#1f6feb', '#388bfd', '#1158c7', '#0d419d', '#032d5d']),
-            textinfo='label+percent',
-            textposition='outside'
-        )])
-        
-        fig2.update_layout(
-            height=200,
-            margin=dict(l=0, r=0, t=20, b=0),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#8b949e', size=11),
-            showlegend=False,
-            title=dict(text="Spending Distribution", font=dict(size=14, color='#f0f6fc'))
-        )
-        
-        st.plotly_chart(fig2, use_container_width=True)
+# Show warning if viewing past month
+if st.session_state.selected_month != get_current_month():
+    st.info(f"📅 Viewing historical data for {MONTH}")
 
 st.divider()
 
@@ -602,4 +640,206 @@ with col2:
             if lname:
                 st.session_state.lending[lname] = lamt
                 save_data()
-                st.rerun()
+                st.rerun()()
+
+# ---- QUICK STATS ----
+st.markdown("<h3 style='font-size: 1rem; color: #8b949e; margin-bottom: 0.5rem;'>Quick Stats</h3>", unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns(3)
+total_budgeted = total_budget()
+budget_utilization = (total_spent() / total_budgeted * 100) if total_budgeted > 0 else 0
+savings_rate = ((SALARY - total_spent() - loan_total()) / SALARY * 100) if SALARY > 0 else 0
+
+with col1:
+    st.markdown(f"""
+    <div class='stat-card'>
+        <div class='stat-label'>Budget Used</div>
+        <div class='stat-value'>{budget_utilization:.1f}%</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown(f"""
+    <div class='stat-card'>
+        <div class='stat-label'>Savings Rate</div>
+        <div class='stat-value' style='color: {'#3fb950' if savings_rate > 20 else '#f85149'};'>{savings_rate:.1f}%</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col3:
+    net_position = lending_total() - loan_total()
+    st.markdown(f"""
+    <div class='stat-card'>
+        <div class='stat-label'>Net Loan Position</div>
+        <div class='stat-value' style='color: {'#3fb950' if net_position >= 0 else '#f85149'};'>₹{abs(net_position):,}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.divider()
+
+# ---- MAIN METRICS ----
+spent = total_spent()
+loans = loan_total()
+lending = lending_total()
+remaining = SALARY - spent - loans
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.metric("Salary", f"₹{SALARY:,}")
+with col2:
+    st.metric("Spent", f"₹{spent:,}")
+with col3:
+    st.metric("Loans", f"₹{loans:,}")
+with col4:
+    color = "normal" if remaining >= 0 else "inverse"
+    st.metric("Remaining", f"₹{remaining:,}", delta_color=color)
+
+# Enhanced progress bar
+progress = min((spent + loans) / SALARY, 1.0) if SALARY > 0 else 0
+allocated_amount = spent + loans
+
+st.markdown(f"""
+<div style='background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 1rem; margin: 1rem 0;'>
+    <div style='display: flex; justify-content: space-between; margin-bottom: 0.5rem;'>
+        <span style='color: #8b949e; font-size: 0.875rem;'>Salary Allocated</span>
+        <span style='color: #f0f6fc; font-weight: 600;'>₹{allocated_amount:,} / ₹{SALARY:,}</span>
+    </div>
+    <div style='background: #0d1117; border-radius: 4px; height: 24px; overflow: hidden; border: 1px solid #30363d;'>
+        <div style='background: linear-gradient(90deg, #1f6feb 0%, #58a6ff 100%); height: 100%; width: {progress*100}%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px;'>
+            <span style='color: white; font-size: 0.75rem; font-weight: 600;'>{progress*100:.1f}%</span>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.divider()
+
+# ---- WEEKLY SPENDING RECOMMENDATIONS ----
+if st.session_state.selected_month == get_current_month():
+    st.markdown("<h3 style='font-size: 1.125rem; color: #f0f6fc; margin-bottom: 1rem;'>💡 Weekly Spending Guide</h3>", unsafe_allow_html=True)
+
+    variable_categories = ["Grocery", "Entertainment", "Travel"]
+    variable_budgets = {}
+    variable_spent = {}
+    for group in st.session_state.budgets:
+        for name, data in st.session_state.budgets[group].items():
+            if name in variable_categories:
+                variable_budgets[name] = data["budget"]
+                variable_spent[name] = data["spent"]
+
+    col1, col2, col3 = st.columns(3)
+    weeks_remaining = 4
+
+    for idx, (col, category) in enumerate(zip([col1, col2, col3], variable_categories)):
+        if category in variable_budgets:
+            budget = variable_budgets[category]
+            spent = variable_spent[category]
+            remaining = budget - spent
+            weekly_allowance = remaining / weeks_remaining if weeks_remaining > 0 else 0
+            
+            with col:
+                color = "#3fb950" if remaining > 0 else "#f85149"
+                st.markdown(f"""
+                <div class='stat-card'>
+                    <div class='stat-label'>{category}</div>
+                    <div style='color: #8b949e; font-size: 0.7rem; margin-top: 0.25rem;'>Budget: ₹{budget:,} | Spent: ₹{spent:,}</div>
+                    <div class='stat-value' style='color: {color}; font-size: 1rem; margin-top: 0.5rem;'>₹{int(weekly_allowance):,}/week</div>
+                    <div style='color: #8b949e; font-size: 0.65rem; margin-top: 0.25rem;'>Remaining: ₹{int(remaining):,}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    st.divider()
+
+# ---- INSIGHTS ----
+col1, col2 = st.columns(2)
+
+with col1:
+    category_data = []
+    for group in st.session_state.budgets:
+        group_spent = sum(v["spent"] for v in st.session_state.budgets[group].values())
+        group_budget = sum(v["budget"] for v in st.session_state.budgets[group].values())
+        if group_budget > 0:
+            category_data.append({
+                "Category": group,
+                "Spent": group_spent,
+                "Budget": group_budget,
+                "Remaining": group_budget - group_spent
+            })
+    
+    if category_data:
+        df = pd.DataFrame(category_data)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            y=df["Category"],
+            x=df["Spent"],
+            name="Spent",
+            orientation='h',
+            marker=dict(color='#58a6ff'),
+            text=[f"₹{x:,}" for x in df["Spent"]],
+            textposition='inside',
+            textfont=dict(color='white', size=11),
+            hovertemplate='%{y}<br>Spent: ₹%{x:,}<extra></extra>'
+        ))
+        fig.add_trace(go.Bar(
+            y=df["Category"],
+            x=df["Remaining"],
+            name="Remaining",
+            orientation='h',
+            marker=dict(color='#30363d'),
+            text=[f"₹{x:,}" if x > 0 else "" for x in df["Remaining"]],
+            textposition='inside',
+            textfont=dict(color='#8b949e', size=11),
+            hovertemplate='%{y}<br>Remaining: ₹%{x:,}<extra></extra>'
+        ))
+        
+        fig.update_layout(
+            barmode='stack',
+            height=220,
+            margin=dict(l=0, r=0, t=30, b=0),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#8b949e', size=11),
+            showlegend=False,
+            xaxis=dict(showgrid=False, showticklabels=False),
+            yaxis=dict(showgrid=False),
+            title=dict(text="Budget by Category", font=dict(size=14, color='#f0f6fc'))
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+with col2:
+    spending_data = []
+    for group in st.session_state.budgets:
+        group_spent = sum(v["spent"] for v in st.session_state.budgets[group].values())
+        if group_spent > 0:
+            spending_data.append({"Type": group, "Amount": group_spent})
+    
+    if loans > 0:
+        spending_data.append({"Type": "Loans", "Amount": loans})
+    
+    if spending_data:
+        df_spend = pd.DataFrame(spending_data)
+        
+        fig2 = go.Figure(data=[go.Pie(
+            labels=df_spend["Type"],
+            values=df_spend["Amount"],
+            hole=.6,
+            marker=dict(colors=['#58a6ff', '#1f6feb', '#388bfd', '#1158c7', '#0d419d', '#032d5d']),
+            textinfo='label+percent',
+            textposition='outside'
+        )])
+        
+        fig2.update_layout(
+            height=200,
+            margin=dict(l=0, r=0, t=20, b=0),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#8b949e', size=11),
+            showlegend=False,
+            title=dict(text="Spending Distribution", font=dict(size=14, color='#f0f6fc'))
+        )
+        
+        st.plotly_chart(fig2, use_container_width=True)
+
+st.divider
