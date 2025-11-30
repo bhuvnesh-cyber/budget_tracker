@@ -561,157 +561,6 @@ st.markdown(f"<p style='text-align: center; color: #8b949e; font-size: 0.875rem;
 
 st.markdown("---")
 
-# Income editor and download button
-col1, col2, col3 = st.columns([1, 1, 1])
-with col1:
-    new_income = st.number_input("💰 Monthly Income", min_value=0, value=st.session_state.income, step=1000, key="income_input")
-    if new_income != st.session_state.income:
-        st.session_state.income = new_income
-        save_data()
-        st.rerun()
-
-with col3:
-    excel_file = export_to_excel()
-    st.download_button(
-        label="📥 Download Excel",
-        data=excel_file,
-        file_name=f"budget_tracker_{st.session_state.selected_month}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-
-SALARY = st.session_state.income
-
-# Show warning if viewing past month
-if st.session_state.selected_month != get_current_month():
-    st.info(f"📅 Viewing historical data for {MONTH}")
-
-st.divider()
-
-# ---- CATEGORIES ----
-for group in st.session_state.budgets:
-    with st.expander(f"{group}", expanded=False):
-        items = st.session_state.budgets[group]
-        
-        for name, data in items.items():
-            is_paid = data["spent"] == data["budget"]
-            
-            col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 2, 2, 1])
-            
-            with col1:
-                paid = st.checkbox("", value=is_paid, key=f"paid-{group}-{name}", label_visibility="collapsed")
-                if paid and not is_paid:
-                    data["spent"] = data["budget"]
-                    save_data()
-                    st.rerun()
-                elif not paid and is_paid:
-                    data["spent"] = 0
-                    save_data()
-                    st.rerun()
-            
-            with col2:
-                st.markdown(f"<div style='padding-top: 8px; color: {'#58a6ff' if is_paid else '#f0f6fc'};'>{name}</div>", unsafe_allow_html=True)
-            
-            with col3:
-                new_spent = st.number_input(
-                    "Spent",
-                    min_value=0,
-                    value=data["spent"],
-                    step=100,
-                    key=f"spent-{group}-{name}",
-                    label_visibility="collapsed"
-                )
-                if new_spent != data["spent"]:
-                    data["spent"] = new_spent
-                    save_data()
-            
-            with col4:
-                new_budget = st.number_input(
-                    "Budget",
-                    min_value=0,
-                    value=data["budget"],
-                    step=100,
-                    key=f"budget-{group}-{name}",
-                    label_visibility="collapsed"
-                )
-                if new_budget != data["budget"]:
-                    data["budget"] = new_budget
-                    save_data()
-            
-            with col5:
-                if st.button("×", key=f"del-{group}-{name}", use_container_width=True, help="Delete"):
-                    del st.session_state.budgets[group][name]
-                    save_data()
-                    st.rerun()
-        
-        with st.form(f"add_{group}", clear_on_submit=True):
-            col1, col2, col3 = st.columns([3, 2, 2])
-            with col1:
-                new_name = st.text_input("Item name", key=f"new_name_{group}")
-            with col2:
-                new_budget = st.number_input("Budget", min_value=0, step=100, key=f"new_budget_{group}")
-            with col3:
-                st.write("")
-                st.write("")
-                if st.form_submit_button("Add", use_container_width=True):
-                    if new_name and new_name not in st.session_state.budgets[group]:
-                        st.session_state.budgets[group][new_name] = {"budget": new_budget, "spent": 0}
-                        save_data()
-                        st.rerun()
-
-st.markdown("---")
-
-# ---- LOANS & LENDING ----
-col1, col2 = st.columns(2)
-
-with col1:
-    with st.expander("Loans Taken", expanded=False):
-        if st.session_state.loans:
-            for lname in list(st.session_state.loans):
-                col_a, col_b, col_c = st.columns([4, 3, 0.8])
-                col_a.write(lname)
-                col_b.write(f"₹{st.session_state.loans[lname]:,}")
-                if col_c.button("×", key=f"loan-{lname}", help="Delete"):
-                    del st.session_state.loans[lname]
-                    save_data()
-                    st.rerun()
-        
-        col_a, col_b = st.columns([4, 3])
-        with col_a:
-            lname = st.text_input("Source", key="loan_source", label_visibility="collapsed", placeholder="Source")
-        with col_b:
-            lamt = st.number_input("Amount", key="loan_amt", min_value=0, step=100, label_visibility="collapsed")
-        
-        if st.button("Add Loan", key="add_loan", use_container_width=True):
-            if lname:
-                st.session_state.loans[lname] = lamt
-                save_data()
-                st.rerun()
-
-with col2:
-    with st.expander("Money Lent", expanded=False):
-        if st.session_state.lending:
-            for lname in list(st.session_state.lending):
-                col_a, col_b, col_c = st.columns([4, 3, 0.8])
-                col_a.write(lname)
-                col_b.write(f"₹{st.session_state.lending[lname]:,}")
-                if col_c.button("×", key=f"lend-{lname}", help="Delete"):
-                    del st.session_state.lending[lname]
-                    save_data()
-                    st.rerun()
-        
-        col_a, col_b = st.columns([4, 3])
-        with col_a:
-            lname = st.text_input("Person", key="lend_person", label_visibility="collapsed", placeholder="Person")
-        with col_b:
-            lamt = st.number_input("Amount", key="lend_amt", min_value=0, step=100, label_visibility="collapsed")
-        
-        if st.button("Add Lending", key="add_lending", use_container_width=True):
-            if lname:
-                st.session_state.lending[lname] = lamt
-                save_data()
-                st.rerun()()
-
 # ---- QUICK STATS ----
 st.markdown("<h3 style='font-size: 1rem; color: #8b949e; margin-bottom: 0.5rem;'>Quick Stats</h3>", unsafe_allow_html=True)
 
@@ -911,5 +760,158 @@ with col2:
         )
         
         st.plotly_chart(fig2, use_container_width=True)
+
+# Income editor and download button
+col1, col2, col3 = st.columns([1, 1, 1])
+with col1:
+    new_income = st.number_input("💰 Monthly Income", min_value=0, value=st.session_state.income, step=1000, key="income_input")
+    if new_income != st.session_state.income:
+        st.session_state.income = new_income
+        save_data()
+        st.rerun()
+
+with col3:
+    excel_file = export_to_excel()
+    st.download_button(
+        label="📥 Download Excel",
+        data=excel_file,
+        file_name=f"budget_tracker_{st.session_state.selected_month}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+
+SALARY = st.session_state.income
+
+# Show warning if viewing past month
+if st.session_state.selected_month != get_current_month():
+    st.info(f"📅 Viewing historical data for {MONTH}")
+
+st.divider()
+
+# ---- CATEGORIES ----
+for group in st.session_state.budgets:
+    with st.expander(f"{group}", expanded=False):
+        items = st.session_state.budgets[group]
+        
+        for name, data in items.items():
+            is_paid = data["spent"] == data["budget"]
+            
+            col1, col2, col3, col4, col5 = st.columns([0.5, 2.5, 2, 2, 1])
+            
+            with col1:
+                paid = st.checkbox("", value=is_paid, key=f"paid-{group}-{name}", label_visibility="collapsed")
+                if paid and not is_paid:
+                    data["spent"] = data["budget"]
+                    save_data()
+                    st.rerun()
+                elif not paid and is_paid:
+                    data["spent"] = 0
+                    save_data()
+                    st.rerun()
+            
+            with col2:
+                st.markdown(f"<div style='padding-top: 8px; color: {'#58a6ff' if is_paid else '#f0f6fc'};'>{name}</div>", unsafe_allow_html=True)
+            
+            with col3:
+                new_spent = st.number_input(
+                    "Spent",
+                    min_value=0,
+                    value=data["spent"],
+                    step=100,
+                    key=f"spent-{group}-{name}",
+                    label_visibility="collapsed"
+                )
+                if new_spent != data["spent"]:
+                    data["spent"] = new_spent
+                    save_data()
+            
+            with col4:
+                new_budget = st.number_input(
+                    "Budget",
+                    min_value=0,
+                    value=data["budget"],
+                    step=100,
+                    key=f"budget-{group}-{name}",
+                    label_visibility="collapsed"
+                )
+                if new_budget != data["budget"]:
+                    data["budget"] = new_budget
+                    save_data()
+            
+            with col5:
+                if st.button("×", key=f"del-{group}-{name}", use_container_width=True, help="Delete"):
+                    del st.session_state.budgets[group][name]
+                    save_data()
+                    st.rerun()
+        
+        with st.form(f"add_{group}", clear_on_submit=True):
+            col1, col2, col3 = st.columns([3, 2, 2])
+            with col1:
+                new_name = st.text_input("Item name", key=f"new_name_{group}")
+            with col2:
+                new_budget = st.number_input("Budget", min_value=0, step=100, key=f"new_budget_{group}")
+            with col3:
+                st.write("")
+                st.write("")
+                if st.form_submit_button("Add", use_container_width=True):
+                    if new_name and new_name not in st.session_state.budgets[group]:
+                        st.session_state.budgets[group][new_name] = {"budget": new_budget, "spent": 0}
+                        save_data()
+                        st.rerun()
+
+st.markdown("---")
+
+# ---- LOANS & LENDING ----
+col1, col2 = st.columns(2)
+
+with col1:
+    with st.expander("Loans Taken", expanded=False):
+        if st.session_state.loans:
+            for lname in list(st.session_state.loans):
+                col_a, col_b, col_c = st.columns([4, 3, 0.8])
+                col_a.write(lname)
+                col_b.write(f"₹{st.session_state.loans[lname]:,}")
+                if col_c.button("×", key=f"loan-{lname}", help="Delete"):
+                    del st.session_state.loans[lname]
+                    save_data()
+                    st.rerun()
+        
+        col_a, col_b = st.columns([4, 3])
+        with col_a:
+            lname = st.text_input("Source", key="loan_source", label_visibility="collapsed", placeholder="Source")
+        with col_b:
+            lamt = st.number_input("Amount", key="loan_amt", min_value=0, step=100, label_visibility="collapsed")
+        
+        if st.button("Add Loan", key="add_loan", use_container_width=True):
+            if lname:
+                st.session_state.loans[lname] = lamt
+                save_data()
+                st.rerun()
+
+with col2:
+    with st.expander("Money Lent", expanded=False):
+        if st.session_state.lending:
+            for lname in list(st.session_state.lending):
+                col_a, col_b, col_c = st.columns([4, 3, 0.8])
+                col_a.write(lname)
+                col_b.write(f"₹{st.session_state.lending[lname]:,}")
+                if col_c.button("×", key=f"lend-{lname}", help="Delete"):
+                    del st.session_state.lending[lname]
+                    save_data()
+                    st.rerun()
+        
+        col_a, col_b = st.columns([4, 3])
+        with col_a:
+            lname = st.text_input("Person", key="lend_person", label_visibility="collapsed", placeholder="Person")
+        with col_b:
+            lamt = st.number_input("Amount", key="lend_amt", min_value=0, step=100, label_visibility="collapsed")
+        
+        if st.button("Add Lending", key="add_lending", use_container_width=True):
+            if lname:
+                st.session_state.lending[lname] = lamt
+                save_data()
+                st.rerun()()
+
+
 
 st.divider()
