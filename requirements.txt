@@ -2,3 +2,14 @@ streamlit
 pandas
 plotly
 xlsxwriter
+```
+
+That's it! No external database packages needed.
+
+### 2. Update `.gitignore`:
+```
+*.db
+budget_data.db
+__pycache__/
+*.pyc
+.DS_Store
