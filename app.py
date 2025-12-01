@@ -97,6 +97,7 @@ def init_db():
     conn = sqlite3.connect(db_path, check_same_thread=False)
     cursor = conn.cursor()
     
+    # Create users table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,26 +106,19 @@ def init_db():
         )
     ''')
     
+    # Create monthly_budgets table with all columns
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS monthly_budgets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             month_year TEXT NOT NULL,
-            income INTEGER NOT NULL,
-            categories TEXT NOT NULL,
-            variable_categories TEXT,
+            income INTEGER NOT NULL DEFAULT 0,
+            categories TEXT NOT NULL DEFAULT '{}',
+            variable_categories TEXT DEFAULT '[]',
             FOREIGN KEY (user_id) REFERENCES users(id),
             UNIQUE(user_id, month_year)
         )
     ''')
-    
-    # Check existing columns
-    cursor.execute('PRAGMA table_info(monthly_budgets)')
-    columns = [col[1] for col in cursor.fetchall()]
-    
-    # Add variable_categories column if it doesn't exist
-    if 'variable_categories' not in columns:
-        cursor.execute('ALTER TABLE monthly_budgets ADD COLUMN variable_categories TEXT')
     
     conn.commit()
     return conn
@@ -163,35 +157,51 @@ def get_current_month():
 def load_monthly_data(user_id, month_year):
     try:
         cursor = db_conn.cursor()
-        cursor.execute('SELECT income, categories, variable_categories FROM monthly_budgets WHERE user_id = ? AND month_year = ?', 
-                      (user_id, month_year))
+        cursor.execute('''
+            SELECT income, categories, variable_categories 
+            FROM monthly_budgets 
+            WHERE user_id = ? AND month_year = ?
+        ''', (user_id, month_year))
         result = cursor.fetchone()
+        
         if result:
+            income = result[0] if result[0] is not None else 0
+            categories = json.loads(result[1]) if result[1] else {}
+            variable_categories = json.loads(result[2]) if result[2] else []
+            
             return {
-                'income': result[0], 
-                'categories': json.loads(result[1]) if result[1] else {},
-                'variable_categories': json.loads(result[2]) if result[2] else []
+                'income': income,
+                'categories': categories,
+                'variable_categories': variable_categories
             }
     except Exception as e:
-        st.error(f"Error loading data: {e}")
+        print(f"Error loading data: {e}")
+    
     return None
 
 def save_monthly_data(user_id, month_year, income, categories, variable_categories):
     try:
         cursor = db_conn.cursor()
         cursor.execute('''
-            INSERT OR REPLACE INTO monthly_budgets (user_id, month_year, income, categories, variable_categories)
+            INSERT OR REPLACE INTO monthly_budgets 
+            (user_id, month_year, income, categories, variable_categories)
             VALUES (?, ?, ?, ?, ?)
         ''', (user_id, month_year, income, json.dumps(categories), json.dumps(variable_categories)))
         db_conn.commit()
+        return True
     except Exception as e:
-        st.error(f"Error saving data: {e}")
+        print(f"Error saving data: {e}")
+        return False
 
 def get_available_months(user_id):
     try:
         cursor = db_conn.cursor()
-        cursor.execute('SELECT month_year FROM monthly_budgets WHERE user_id = ? ORDER BY month_year DESC', 
-                      (user_id,))
+        cursor.execute('''
+            SELECT month_year 
+            FROM monthly_budgets 
+            WHERE user_id = ? 
+            ORDER BY month_year DESC
+        ''', (user_id,))
         return [row[0] for row in cursor.fetchall()]
     except:
         return []
@@ -205,6 +215,10 @@ if 'variable_categories' not in st.session_state:
     st.session_state.variable_categories = []
 if 'desktop_mode' not in st.session_state:
     st.session_state.desktop_mode = False
+if 'income' not in st.session_state:
+    st.session_state.income = 0
+if 'categories' not in st.session_state:
+    st.session_state.categories = {}
 
 # ---- LOGIN ----
 if not st.session_state.logged_in:
@@ -289,9 +303,13 @@ def load_data():
         st.session_state.variable_categories = []
 
 def save_data():
-    save_monthly_data(st.session_state.user_id, st.session_state.selected_month,
-                     st.session_state.income, st.session_state.categories,
-                     st.session_state.variable_categories)
+    return save_monthly_data(
+        st.session_state.user_id, 
+        st.session_state.selected_month,
+        st.session_state.income, 
+        st.session_state.categories,
+        st.session_state.variable_categories
+    )
 
 if 'data_loaded' not in st.session_state or st.session_state.get('last_month') != st.session_state.selected_month:
     load_data()
@@ -481,17 +499,17 @@ if st.session_state.variable_categories and st.session_state.selected_month == g
             cat = st.session_state.categories[cat_name]
             budget = cat.get('budget', 0)
             spent = cat.get('spent', 0)
-            remaining = budget - spent
-            weekly = remaining / weeks_remaining if weeks_remaining > 0 else 0
+            remaining_budget = budget - spent
+            weekly = remaining_budget / weeks_remaining if weeks_remaining > 0 else 0
             
             with cols[idx]:
-                color = "#3fb950" if remaining > 0 else "#f85149"
+                color = "#3fb950" if remaining_budget > 0 else "#f85149"
                 st.markdown(f"""
                 <div class='weekly-card'>
                     <div class='weekly-title'>{cat_name}</div>
                     <div class='weekly-amount' style='color: {color};'>₹{int(weekly):,}</div>
                     <div class='weekly-subtitle'>per week</div>
-                    <div class='weekly-subtitle'>₹{int(remaining):,} left</div>
+                    <div class='weekly-subtitle'>₹{int(remaining_budget):,} left</div>
                 </div>
                 """, unsafe_allow_html=True)
 
