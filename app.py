@@ -118,10 +118,12 @@ def init_db():
         )
     ''')
     
-    # Add variable_categories column if it doesn't exist (for existing databases)
-    try:
-        cursor.execute('SELECT variable_categories FROM monthly_budgets LIMIT 1')
-    except sqlite3.OperationalError:
+    # Check existing columns
+    cursor.execute('PRAGMA table_info(monthly_budgets)')
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    # Add variable_categories column if it doesn't exist
+    if 'variable_categories' not in columns:
         cursor.execute('ALTER TABLE monthly_budgets ADD COLUMN variable_categories TEXT')
     
     conn.commit()
@@ -144,11 +146,14 @@ def create_user(username, password):
         return False
 
 def authenticate_user(username, password):
-    cursor = db_conn.cursor()
-    cursor.execute('SELECT id, password_hash FROM users WHERE username = ?', (username,))
-    result = cursor.fetchone()
-    if result and hash_password(password) == result[1]:
-        return result[0]
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute('SELECT id, password_hash FROM users WHERE username = ?', (username,))
+        result = cursor.fetchone()
+        if result and hash_password(password) == result[1]:
+            return result[0]
+    except:
+        pass
     return None
 
 # ---- DATA FUNCTIONS ----
@@ -164,7 +169,7 @@ def load_monthly_data(user_id, month_year):
         if result:
             return {
                 'income': result[0], 
-                'categories': json.loads(result[1]),
+                'categories': json.loads(result[1]) if result[1] else {},
                 'variable_categories': json.loads(result[2]) if result[2] else []
             }
     except Exception as e:
@@ -183,10 +188,13 @@ def save_monthly_data(user_id, month_year, income, categories, variable_categori
         st.error(f"Error saving data: {e}")
 
 def get_available_months(user_id):
-    cursor = db_conn.cursor()
-    cursor.execute('SELECT month_year FROM monthly_budgets WHERE user_id = ? ORDER BY month_year DESC', 
-                  (user_id,))
-    return [row[0] for row in cursor.fetchall()]
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute('SELECT month_year FROM monthly_budgets WHERE user_id = ? ORDER BY month_year DESC', 
+                      (user_id,))
+        return [row[0] for row in cursor.fetchall()]
+    except:
+        return []
 
 # ---- SESSION STATE ----
 if 'logged_in' not in st.session_state:
@@ -195,6 +203,8 @@ if 'selected_month' not in st.session_state:
     st.session_state.selected_month = get_current_month()
 if 'variable_categories' not in st.session_state:
     st.session_state.variable_categories = []
+if 'desktop_mode' not in st.session_state:
+    st.session_state.desktop_mode = False
 
 # ---- LOGIN ----
 if not st.session_state.logged_in:
@@ -289,7 +299,8 @@ if 'data_loaded' not in st.session_state or st.session_state.get('last_month') !
     st.session_state.last_month = st.session_state.selected_month
 
 # ---- HEADER ----
-col1, col2 = st.columns([1, 3])
+col1, col2, col3 = st.columns([1, 2, 1])
+
 with col1:
     if st.button("🚪 Logout", use_container_width=True):
         st.session_state.logged_in = False
@@ -301,14 +312,21 @@ with col2:
     if current not in months:
         months.insert(0, current)
     
-    options = {datetime.strptime(m, "%Y-%m").strftime("%b %Y"): m for m in months}
-    current_display = [k for k, v in options.items() if v == st.session_state.selected_month][0]
-    
-    selected = st.selectbox("📅 Month", list(options.keys()), 
-                           index=list(options.keys()).index(current_display))
-    
-    if options[selected] != st.session_state.selected_month:
-        st.session_state.selected_month = options[selected]
+    if months:
+        options = {datetime.strptime(m, "%Y-%m").strftime("%b %Y"): m for m in months}
+        current_display = [k for k, v in options.items() if v == st.session_state.selected_month][0]
+        
+        selected = st.selectbox("📅 Month", list(options.keys()), 
+                               index=list(options.keys()).index(current_display))
+        
+        if options[selected] != st.session_state.selected_month:
+            st.session_state.selected_month = options[selected]
+            st.rerun()
+
+with col3:
+    mode_label = "💻 Desktop" if not st.session_state.desktop_mode else "📱 Mobile"
+    if st.button(mode_label, use_container_width=True):
+        st.session_state.desktop_mode = not st.session_state.desktop_mode
         st.rerun()
 
 st.markdown("---")
@@ -339,47 +357,95 @@ st.markdown("---")
 
 # ---- CATEGORIES ----
 st.markdown("### Categories")
-for cat_name in list(st.session_state.categories.keys()):
-    cat = st.session_state.categories[cat_name]
-    
-    col1, col2, col3, col4, col5 = st.columns([2.5, 1.5, 1.5, 0.8, 0.8])
-    
-    with col1:
-        st.markdown(f"<div style='padding-top: 8px; color: #f0f6fc;'>{cat_name}</div>", 
-                   unsafe_allow_html=True)
-    
-    with col2:
-        spent = st.number_input("Spent", min_value=0, value=cat.get('spent', 0),
-                               step=100, key=f"spent_{cat_name}", label_visibility="collapsed")
-        if spent != cat.get('spent', 0):
-            cat['spent'] = spent
-            save_data()
-    
-    with col3:
-        budget = st.number_input("Budget", min_value=0, value=cat.get('budget', 0),
-                                step=100, key=f"budget_{cat_name}", label_visibility="collapsed")
-        if budget != cat.get('budget', 0):
-            cat['budget'] = budget
-            save_data()
-    
-    with col4:
-        is_variable = cat_name in st.session_state.variable_categories
-        if st.checkbox("📊", value=is_variable, key=f"var_{cat_name}", help="Track weekly"):
-            if not is_variable:
-                st.session_state.variable_categories.append(cat_name)
-                save_data()
-        else:
-            if is_variable:
-                st.session_state.variable_categories.remove(cat_name)
-                save_data()
-    
-    with col5:
-        if st.button("×", key=f"del_{cat_name}", help="Delete"):
-            del st.session_state.categories[cat_name]
-            if cat_name in st.session_state.variable_categories:
-                st.session_state.variable_categories.remove(cat_name)
-            save_data()
-            st.rerun()
+
+if st.session_state.desktop_mode:
+    # Desktop Mode - Table view
+    if st.session_state.categories:
+        for cat_name in list(st.session_state.categories.keys()):
+            cat = st.session_state.categories[cat_name]
+            
+            col1, col2, col3, col4, col5 = st.columns([2.5, 1.5, 1.5, 0.8, 0.8])
+            
+            with col1:
+                st.markdown(f"<div style='padding-top: 8px; color: #f0f6fc;'>{cat_name}</div>", 
+                           unsafe_allow_html=True)
+            
+            with col2:
+                spent = st.number_input("Spent", min_value=0, value=cat.get('spent', 0),
+                                       step=100, key=f"spent_{cat_name}", label_visibility="collapsed")
+                if spent != cat.get('spent', 0):
+                    cat['spent'] = spent
+                    save_data()
+            
+            with col3:
+                budget = st.number_input("Budget", min_value=0, value=cat.get('budget', 0),
+                                        step=100, key=f"budget_{cat_name}", label_visibility="collapsed")
+                if budget != cat.get('budget', 0):
+                    cat['budget'] = budget
+                    save_data()
+            
+            with col4:
+                is_variable = cat_name in st.session_state.variable_categories
+                if st.checkbox("📊", value=is_variable, key=f"var_{cat_name}", help="Track weekly"):
+                    if not is_variable:
+                        st.session_state.variable_categories.append(cat_name)
+                        save_data()
+                else:
+                    if is_variable:
+                        st.session_state.variable_categories.remove(cat_name)
+                        save_data()
+            
+            with col5:
+                if st.button("×", key=f"del_{cat_name}", help="Delete"):
+                    del st.session_state.categories[cat_name]
+                    if cat_name in st.session_state.variable_categories:
+                        st.session_state.variable_categories.remove(cat_name)
+                    save_data()
+                    st.rerun()
+else:
+    # Mobile Mode - Card view
+    for cat_name in list(st.session_state.categories.keys()):
+        cat = st.session_state.categories[cat_name]
+        
+        with st.container():
+            st.markdown(f"**{cat_name}**")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                spent = st.number_input("Spent", min_value=0, value=cat.get('spent', 0),
+                                       step=100, key=f"spent_{cat_name}")
+                if spent != cat.get('spent', 0):
+                    cat['spent'] = spent
+                    save_data()
+            
+            with col2:
+                budget = st.number_input("Budget", min_value=0, value=cat.get('budget', 0),
+                                        step=100, key=f"budget_{cat_name}")
+                if budget != cat.get('budget', 0):
+                    cat['budget'] = budget
+                    save_data()
+            
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col1:
+                is_variable = cat_name in st.session_state.variable_categories
+                if st.checkbox("Track weekly", value=is_variable, key=f"var_{cat_name}"):
+                    if not is_variable:
+                        st.session_state.variable_categories.append(cat_name)
+                        save_data()
+                else:
+                    if is_variable:
+                        st.session_state.variable_categories.remove(cat_name)
+                        save_data()
+            
+            with col3:
+                if st.button("Delete", key=f"del_{cat_name}", use_container_width=True):
+                    del st.session_state.categories[cat_name]
+                    if cat_name in st.session_state.variable_categories:
+                        st.session_state.variable_categories.remove(cat_name)
+                    save_data()
+                    st.rerun()
+            
+            st.markdown("---")
 
 # ---- ADD CATEGORY ----
 with st.form("add_category", clear_on_submit=True):
