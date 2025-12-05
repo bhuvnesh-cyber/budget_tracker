@@ -428,34 +428,38 @@ def render_section(title, section_key):
         spent_so_far = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
         
         with st.container(border=True):
-            # Header Row: Name | Delete Button
-            # Using columns to push delete button to the right
-            c_head_1, c_head_2 = st.columns([5, 1])
-            c_head_1.markdown(f"**{cat}**")
+            # Row 1: Name and Delete Button
+            # Using [4, 1] ratio to keep them on the same line on mobile
+            c_name, c_del = st.columns([4, 1])
+            with c_name:
+                st.markdown(f"**{cat}**")
+            with c_del:
+                if st.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete Category"):
+                    delete_category(section_key, cat)
+                    st.rerun()
             
-            if c_head_2.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete Category"):
-                delete_category(section_key, cat)
-                st.rerun()
-            
-            # Input Row: Budget | Spent | Max Button
-            # We want the Max button to be next to the Spent input
-            c_bud, c_spent, c_max = st.columns([3, 3, 1])
-            
-            # Budget Input
-            new_budget = c_bud.number_input(
+            # Row 2: Budget Input
+            # Using collapsed label with a caption to save space
+            st.caption("Budget")
+            new_budget = st.number_input(
                 col2_header, 
                 value=int(budget), 
                 min_value=0, 
                 step=50, 
                 key=f"bud_{section_key}_{cat}", 
-                format="%d"
+                format="%d",
+                label_visibility="collapsed"
             )
             if new_budget != budget:
                 st.session_state.data[section_key][cat] = new_budget
                 save_data(st.session_state.data)
                 st.rerun()
                 
-            # Spent Input & Max Button
+            # Row 3: Spent Input and Max Button
+            st.caption("Spent")
+            # Using [4, 1] ratio to keep input and button on same line
+            c_spent, c_max = st.columns([4, 1])
+            
             spent_key = f"spent_{section_key}_{cat}"
             
             # Ensure key exists
@@ -477,29 +481,24 @@ def render_section(title, section_key):
                 "key": spent_key,
                 "format": "%d",
                 "on_change": update_spent_callback,
-                "args": (cat, spent_key)
+                "args": (cat, spent_key),
+                "label_visibility": "collapsed"
             }
             
             if spent_key not in st.session_state:
                 input_kwargs["value"] = int(spent_so_far)
-                
-            c_spent.number_input(**input_kwargs)
             
-            # Max Button - Vertically aligned with input (using some spacing or just placement)
-            # Streamlit buttons align to top of column, inputs have labels. 
-            # To align, we can add a spacer or just accept top alignment.
-            # With label_visibility="visible" on inputs, the button will be high.
-            # Let's try to add a blank label to the button column to push it down? 
-            # Or just let it be.
-            c_max.write("") # Spacer for label height approx
-            c_max.write("") 
-            c_max.button(
-                "📍", 
-                key=f"max_{section_key}_{cat}", 
-                help=f"Set {col3_header} to {col2_header}", 
-                on_click=set_max_spent, 
-                args=(cat, int(budget), spent_key)
-            )
+            with c_spent:
+                st.number_input(**input_kwargs)
+            
+            with c_max:
+                st.button(
+                    "📍", 
+                    key=f"max_{section_key}_{cat}", 
+                    help=f"Set {col3_header} to {col2_header}", 
+                    on_click=set_max_spent, 
+                    args=(cat, int(budget), spent_key)
+                )
 
     # Add Category to Section
     with st.expander(f"➕ Add to {title}"):
