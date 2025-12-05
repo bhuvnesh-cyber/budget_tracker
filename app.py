@@ -331,30 +331,32 @@ st.markdown("""
     <style>
     /* Global Styles */
     .block-container {
-        padding-top: 1rem;
-        padding-bottom: 3rem;
+        padding-top: 2rem;
+        padding-bottom: 5rem;
         max-width: 600px; /* Mobile width constraint */
     }
     
     h1, h2, h3 {
         font-family: 'Inter', sans-serif;
-        font-weight: 600;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        color: #f8fafc;
     }
     
-    /* Summary Cards */
+    /* Modern Cards with Gradient */
     .summary-card {
-        background-color: #1E1E1E;
-        border-radius: 12px;
-        padding: 16px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        border: 1px solid #333;
-        margin-bottom: 20px;
+        background: linear-gradient(145deg, #1e293b, #0f172a);
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        border: 1px solid #334155;
+        margin-bottom: 24px;
     }
     
     .summary-grid {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
-        gap: 10px;
+        gap: 12px;
         text-align: center;
     }
     
@@ -365,38 +367,41 @@ st.markdown("""
     
     .summary-label {
         font-size: 0.7rem;
-        color: #888;
+        color: #94a3b8;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 4px;
+        letter-spacing: 1px;
+        margin-bottom: 6px;
+        font-weight: 600;
     }
     
     .summary-value {
         font-size: 1.1rem;
-        font-weight: 700;
-        color: #fff;
+        font-weight: 800;
+        color: #f1f5f9;
     }
     
-    .positive { color: #4CAF50; }
-    .negative { color: #FF5252; }
+    .positive { color: #34d399 !important; } /* Emerald 400 */
+    .negative { color: #f87171 !important; } /* Red 400 */
     
     /* Section Headers */
     .section-header {
-        font-size: 1.2rem;
-        font-weight: 600;
-        margin-top: 24px;
-        margin-bottom: 12px;
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin-top: 32px;
+        margin-bottom: 16px;
         display: flex;
         align-items: center;
         justify-content: space-between;
+        color: #e2e8f0;
     }
     
     .section-badge {
-        font-size: 0.8rem;
-        background-color: #333;
-        padding: 2px 8px;
-        border-radius: 12px;
-        color: #ccc;
+        font-size: 0.75rem;
+        background-color: #1e293b;
+        padding: 4px 10px;
+        border-radius: 20px;
+        color: #94a3b8;
+        border: 1px solid #334155;
     }
 
     /* Category Cards */
@@ -406,55 +411,77 @@ st.markdown("""
     }
     
     .stExpander > details {
-        background-color: #1E1E1E;
+        background-color: #1e293b;
         border-radius: 12px;
-        border: 1px solid #333;
-        margin-bottom: 10px;
+        border: 1px solid #334155;
+        margin-bottom: 12px;
         overflow: hidden;
+        transition: border-color 0.2s;
+    }
+    
+    .stExpander > details:hover {
+        border-color: #64748b;
     }
     
     .stExpander > details > summary {
-        padding: 12px 16px !important;
-        background-color: #1E1E1E !important;
-        border-bottom: 1px solid #2a2a2a;
-        font-weight: 500;
+        padding: 14px 16px !important;
+        background-color: #1e293b !important;
+        border-bottom: 1px solid #334155;
+        font-weight: 600;
         font-size: 1rem;
+        color: #f1f5f9;
     }
     
     .stExpander > details > div {
-        padding: 16px !important;
+        padding: 20px !important;
+        background-color: #0f172a;
     }
     
     /* Inputs */
     .stNumberInput input {
-        background-color: #2a2a2a !important;
-        border: 1px solid #444 !important;
+        background-color: #020617 !important;
+        border: 1px solid #334155 !important;
         border-radius: 8px !important;
-        color: white !important;
+        color: #f8fafc !important;
+    }
+    
+    .stNumberInput input:focus {
+        border-color: #38bdf8 !important; /* Sky 400 */
     }
     
     /* Buttons */
     .stButton button {
         border-radius: 8px !important;
-        font-weight: 500 !important;
+        font-weight: 600 !important;
+        background-color: #334155;
+        color: white;
+        border: none;
+        transition: background-color 0.2s;
+    }
+    
+    .stButton button:hover {
+        background-color: #475569;
+        color: white;
     }
     
     /* Progress Bar */
     .progress-bg {
-        background-color: #333;
-        height: 6px;
-        border-radius: 3px;
+        background-color: #0f172a;
+        height: 8px;
+        border-radius: 4px;
         overflow: hidden;
-        margin-top: 8px;
+        margin-top: 10px;
+        border: 1px solid #334155;
     }
     
     .progress-fill {
         height: 100%;
-        background-color: #4CAF50;
+        background: linear-gradient(90deg, #34d399, #10b981);
+        border-radius: 4px;
     }
     
-    .progress-fill.warning { background-color: #FFC107; }
-    .progress-fill.danger { background-color: #FF5252; }
+    .progress-fill.warning { background: linear-gradient(90deg, #facc15, #eab308); }
+    .progress-fill.danger { background: linear-gradient(90deg, #f87171, #ef4444); }
     
     </style>
 """, unsafe_allow_html=True)
