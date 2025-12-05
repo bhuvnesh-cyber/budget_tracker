@@ -247,12 +247,8 @@ dynamic_weekly_budget = remaining / weeks_remaining if weeks_remaining > 0 else 
 wants_categories = list(st.session_state.data["wants"].keys())
 
 # Display Weeks
-wh1, wh2, wh3, wh4 = st.columns([1.5, 2, 1.5, 1.5])
-wh1.markdown("**Week**")
-wh2.markdown("**Dates**")
-wh3.markdown("**Budget**")
-wh4.markdown("**Spent**")
-
+# Display Weeks
+weekly_data = []
 for i, (start, end) in enumerate(weeks):
     week_num = i + 1
     
@@ -275,12 +271,27 @@ for i, (start, end) in enumerate(weeks):
         display_budget = "-" 
     else:
         display_budget = f"₹{int(dynamic_weekly_budget):,}"
-    
-    c1, c2, c3, c4 = st.columns([1.5, 2, 1.5, 1.5])
-    c1.write(f"{status_icon} **Week {week_num}**")
-    c2.write(f"{start.strftime('%d %b')} - {end.strftime('%d %b')}")
-    c3.write(display_budget)
-    c4.write(f"₹{int(week_spent):,}")
+        
+    weekly_data.append({
+        "Status": status_icon,
+        "Week": f"Week {week_num}",
+        "Dates": f"{start.strftime('%d %b')} - {end.strftime('%d %b')}",
+        "Budget": display_budget,
+        "Spent": f"₹{int(week_spent):,}"
+    })
+
+st.dataframe(
+    pd.DataFrame(weekly_data),
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Status": st.column_config.TextColumn("Status", width="small"),
+        "Week": st.column_config.TextColumn("Week", width="small"),
+        "Dates": st.column_config.TextColumn("Dates", width="medium"),
+        "Budget": st.column_config.TextColumn("Budget", width="small"),
+        "Spent": st.column_config.TextColumn("Spent", width="small"),
+    }
+)
 
 st.divider()
 
@@ -340,10 +351,15 @@ def render_section(title, section_key):
         budget = st.session_state.data[section_key][cat]
         spent_so_far = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
         
-        c1, c2, c3 = st.columns([2, 1.5, 2])
+        c1, c_del, c2, c3 = st.columns([2, 0.5, 1.5, 2])
         
-        # Col 1: Name + Delete
+        # Col 1: Name
         c1.write(f"**{cat}**")
+        
+        # Col Del: Delete Button
+        if c_del.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete Category"):
+            delete_category(section_key, cat)
+            st.rerun()
         
         # Col 2: Budget / Total Debt
         new_budget = c2.number_input(
@@ -407,7 +423,7 @@ def render_section(title, section_key):
                 add_category(section_key, new_name, new_bud)
                 st.rerun()
 
-st.divider()
+
 
 # 2. Sections
 render_section("Needs", "needs")
@@ -418,5 +434,3 @@ render_section("Savings", "savings")
 st.divider()
 render_section("Debts", "debts")
 st.divider()
-
-
