@@ -1,593 +1,422 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-from datetime import datetime
-from io import BytesIO
 import json
-import sqlite3
 import os
-import hashlib
+import datetime
+import calendar
+import altair as alt
 
-st.set_page_config(page_title="Budget Tracker", layout="centered", initial_sidebar_state="collapsed")
+# --- Constants & Configuration ---
+DATA_FILE = "budget_data.json"
+st.set_page_config(page_title="Budget Tracker", page_icon="💰", layout="centered")
 
-st.markdown("""
-<style>
-    .stApp { background: #0d1117; }
-    .block-container { padding: 1rem; max-width: 600px; }
-    div[data-testid="stMetricValue"] { font-size: 1.5rem; color: #f0f6fc; }
-    div[data-testid="stMetricLabel"] { font-size: 0.75rem; color: #8b949e; }
-    h1, h2, h3 { color: #f0f6fc !important; }
-    input, select, textarea { 
-        background: #0d1117 !important; 
-        color: #f0f6fc !important; 
-        border: 1px solid #30363d !important;
-    }
-    button {
-        background: #21262d !important;
-        color: #c9d1d9 !important;
-        border: 1px solid #30363d !important;
-    }
-    button:hover { background: #30363d !important; }
-    .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #1f6feb 0%, #58a6ff 100%) !important;
-        color: white !important;
-        border: none !important;
-        font-weight: 600;
-    }
-    .stButton > button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #1158c7 0%, #1f6feb 100%) !important;
-    }
-    .weekly-card {
-        background: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        padding: 0.75rem;
-        margin-bottom: 0.5rem;
-        text-align: center;
-    }
-    .weekly-title {
-        color: #8b949e;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        margin-bottom: 0.25rem;
-    }
-    .weekly-amount {
-        color: #f0f6fc;
-        font-size: 1.25rem;
-        font-weight: 600;
-    }
-    .weekly-subtitle {
-        color: #8b949e;
-        font-size: 0.65rem;
-        margin-top: 0.25rem;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background: #0d1117;
-        padding: 4px;
-        border-radius: 8px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 6px;
-        color: #8b949e;
-        padding: 0.5rem 1.5rem;
-    }
-    .stTabs [aria-selected="true"] {
-        background: #1f6feb !important;
-        color: #ffffff !important;
-    }
-    /* Hide Streamlit branding */
-    #MainMenu, footer, header { visibility: hidden; }
-    /* Better number inputs on mobile */
-    input[type="number"] {
-        font-size: 16px !important;
-        -webkit-appearance: none;
-        -moz-appearance: textfield;
-    }
-    .stProgress > div > div {
-        background: linear-gradient(90deg, #1f6feb 0%, #58a6ff 100%);
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ---- DATABASE SETUP ----
-@st.cache_resource
-def init_db():
-    db_path = os.path.join(os.path.dirname(__file__), 'budget_data.db')
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    cursor = conn.cursor()
-    
-    # Create users table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL
-        )
-    ''')
-    
-    # Create monthly_budgets table with all columns
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS monthly_budgets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            month_year TEXT NOT NULL,
-            income INTEGER NOT NULL DEFAULT 0,
-            categories TEXT NOT NULL DEFAULT '{}',
-            variable_categories TEXT DEFAULT '[]',
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            UNIQUE(user_id, month_year)
-        )
-    ''')
-    
-    conn.commit()
-    return conn
-
-db_conn = init_db()
-
-# ---- AUTH ----
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def create_user(username, password):
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)', 
-                      (username, hash_password(password)))
-        db_conn.commit()
-        return True
-    except:
-        return False
-
-def authenticate_user(username, password):
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute('SELECT id, password_hash FROM users WHERE username = ?', (username,))
-        result = cursor.fetchone()
-        if result and hash_password(password) == result[1]:
-            return result[0]
-    except:
-        pass
-    return None
-
-# ---- DATA FUNCTIONS ----
-def get_current_month():
-    return datetime.now().strftime("%Y-%m")
-
-def load_monthly_data(user_id, month_year):
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute('''
-            SELECT income, categories, variable_categories 
-            FROM monthly_budgets 
-            WHERE user_id = ? AND month_year = ?
-        ''', (user_id, month_year))
-        result = cursor.fetchone()
-        
-        if result:
-            income = result[0] if result[0] is not None else 0
-            categories = json.loads(result[1]) if result[1] else {}
-            variable_categories = json.loads(result[2]) if result[2] else []
-            
-            return {
-                'income': income,
-                'categories': categories,
-                'variable_categories': variable_categories
-            }
-    except Exception as e:
-        print(f"Error loading data: {e}")
-    
-    return None
-
-def save_monthly_data(user_id, month_year, income, categories, variable_categories):
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO monthly_budgets 
-            (user_id, month_year, income, categories, variable_categories)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (user_id, month_year, income, json.dumps(categories), json.dumps(variable_categories)))
-        db_conn.commit()
-        return True
-    except Exception as e:
-        print(f"Error saving data: {e}")
-        return False
-
-def get_available_months(user_id):
-    try:
-        cursor = db_conn.cursor()
-        cursor.execute('''
-            SELECT month_year 
-            FROM monthly_budgets 
-            WHERE user_id = ? 
-            ORDER BY month_year DESC
-        ''', (user_id,))
-        return [row[0] for row in cursor.fetchall()]
-    except:
-        return []
-
-# ---- SESSION STATE ----
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'selected_month' not in st.session_state:
-    st.session_state.selected_month = get_current_month()
-if 'variable_categories' not in st.session_state:
-    st.session_state.variable_categories = []
-if 'desktop_mode' not in st.session_state:
-    st.session_state.desktop_mode = False
-if 'income' not in st.session_state:
-    st.session_state.income = 0
-if 'categories' not in st.session_state:
-    st.session_state.categories = {}
-
-# ---- LOGIN ----
-if not st.session_state.logged_in:
-    st.markdown("""
-    <div style='text-align: center; margin: 2rem 0 1rem 0;'>
-        <h1 style='font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #58a6ff 0%, #1f6feb 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>Budget Tracker</h1>
-        <p style='color: #8b949e; font-size: 0.9rem;'>Manage your finances with ease</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        tab1, tab2 = st.tabs(["🔐 Login", "✨ Sign Up"])
-        
-        with tab1:
-            st.markdown("""
-            <div style='text-align: center; margin: 1rem 0;'>
-                <h3 style='color: #f0f6fc; font-size: 1.25rem;'>Welcome Back</h3>
-                <p style='color: #8b949e; font-size: 0.8rem;'>Sign in to continue</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            with st.form("login_form"):
-                username = st.text_input("👤 Username", placeholder="Enter your username")
-                password = st.text_input("🔒 Password", type="password", placeholder="Enter your password")
-                
-                st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
-                
-                if st.form_submit_button("Login", use_container_width=True, type="primary"):
-                    if username and password:
-                        user_id = authenticate_user(username, password)
-                        if user_id:
-                            st.session_state.logged_in = True
-                            st.session_state.user_id = user_id
-                            st.session_state.username = username
-                            st.rerun()
-                        else:
-                            st.error("❌ Invalid username or password")
-                    else:
-                        st.error("⚠️ Please fill all fields")
-        
-        with tab2:
-            st.markdown("""
-            <div style='text-align: center; margin: 1rem 0;'>
-                <h3 style='color: #f0f6fc; font-size: 1.25rem;'>Create Account</h3>
-                <p style='color: #8b949e; font-size: 0.8rem;'>Start tracking your budget today</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            with st.form("signup_form"):
-                new_username = st.text_input("👤 Username", placeholder="Choose a username")
-                new_password = st.text_input("🔒 Password", type="password", placeholder="Min 6 characters")
-                confirm = st.text_input("🔒 Confirm Password", type="password", placeholder="Confirm your password")
-                
-                st.markdown("<div style='height: 0.5rem;'></div>", unsafe_allow_html=True)
-                
-                if st.form_submit_button("Sign Up", use_container_width=True, type="primary"):
-                    if new_username and new_password and confirm:
-                        if new_password != confirm:
-                            st.error("❌ Passwords don't match")
-                        elif len(new_password) < 6:
-                            st.error("⚠️ Password must be 6+ characters")
-                        elif create_user(new_username, new_password):
-                            st.success("✅ Account created! Please switch to Login tab.")
-                        else:
-                            st.error("❌ Username already exists")
-                    else:
-                        st.error("⚠️ Please fill all fields")
-    
-    st.stop()
-
-# ---- LOAD DATA ----
+# --- Data Handling ---
+# --- Data Handling ---
 def load_data():
-    data = load_monthly_data(st.session_state.user_id, st.session_state.selected_month)
-    if data:
-        st.session_state.income = data['income']
-        st.session_state.categories = data['categories']
-        st.session_state.variable_categories = data.get('variable_categories', [])
-    else:
-        st.session_state.income = 0
-        st.session_state.categories = {}
-        st.session_state.variable_categories = []
-
-def save_data():
-    return save_monthly_data(
-        st.session_state.user_id, 
-        st.session_state.selected_month,
-        st.session_state.income, 
-        st.session_state.categories,
-        st.session_state.variable_categories
-    )
-
-if 'data_loaded' not in st.session_state or st.session_state.get('last_month') != st.session_state.selected_month:
-    load_data()
-    st.session_state.data_loaded = True
-    st.session_state.last_month = st.session_state.selected_month
-
-# ---- HEADER ----
-col1, col2, col3 = st.columns([1, 2, 1])
-
-with col1:
-    if st.button("🚪 Logout", use_container_width=True):
-        st.session_state.logged_in = False
-        st.rerun()
-
-with col2:
-    months = get_available_months(st.session_state.user_id)
-    current = get_current_month()
-    if current not in months:
-        months.insert(0, current)
+    default_data = {
+        "earnings": 0.0,
+        "needs": {},
+        "wants": {},
+        "savings": {},
+        "debts": {},
+        "expenses": [],
+        "last_month": datetime.datetime.now().month
+    }
     
-    if months:
-        options = {datetime.strptime(m, "%Y-%m").strftime("%b %Y"): m for m in months}
-        current_display = [k for k, v in options.items() if v == st.session_state.selected_month][0]
+    if not os.path.exists(DATA_FILE):
+        return default_data
         
-        selected = st.selectbox("📅 Month", list(options.keys()), 
-                               index=list(options.keys()).index(current_display))
+    try:
+        with open(DATA_FILE, "r") as f:
+            data = json.load(f)
+            
+            # Migration for old structure
+            if "budgets" in data:
+                data["needs"] = data.get("budgets", {})
+                del data["budgets"]
+            
+            # Ensure all keys exist
+            for key in default_data:
+                if key not in data:
+                    data[key] = default_data[key]
+            
+            # Check for Month Reset
+            current_month = datetime.datetime.now().month
+            if data["last_month"] != current_month:
+                # Reset expenses for new month
+                data["expenses"] = []
+                # Reset spent amounts in session state keys if they exist (will be handled by rerun)
+                data["last_month"] = current_month
+                # We could also archive old data here if needed, but user asked to just reset
+                
+            return data
+    except json.JSONDecodeError:
+        return default_data
+
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+# Initialize Session State
+if "data" not in st.session_state:
+    st.session_state.data = load_data()
+
+# --- Helper Functions ---
+def get_current_month_dates():
+    now = datetime.datetime.now()
+    _, num_days = calendar.monthrange(now.year, now.month)
+    return now, num_days
+
+def calculate_totals():
+    total_earnings = st.session_state.data["earnings"]
+    
+    # Separate expenses into Debt and Non-Debt
+    debt_cats = list(st.session_state.data["debts"].keys())
+    expenses = st.session_state.data["expenses"]
+    
+    spent_debt = sum(x["Amount"] for x in expenses if x["Category"] in debt_cats)
+    spent_non_debt = sum(x["Amount"] for x in expenses if x["Category"] not in debt_cats)
+    
+    total_debt_budget = sum(st.session_state.data["debts"].values())
+    
+    # Logic:
+    # Remaining = Earnings - Non_Debt_Spent - Liability
+    # Liability = max(Debt Budget, Debt Paid)
+    # This ensures we reserve the budget amount, but if we pay more, we deduct the actual.
+    debt_deduction = max(spent_debt, total_debt_budget)
+    
+    remaining = total_earnings - spent_non_debt - debt_deduction
+    
+    # Total Spent should reflect ALL spending (including debt payments) so the user sees activity
+    total_spent = spent_non_debt + spent_debt
+    
+    return total_earnings, total_spent, remaining
+
+def update_spent_callback(cat, key):
+    new_total = st.session_state.get(key)
+    if new_total is None:
+        return # Should not happen with min_value=0
         
-        if options[selected] != st.session_state.selected_month:
-            st.session_state.selected_month = options[selected]
-            st.rerun()
+    # Calculate current total for this category
+    current_total = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
+    diff = new_total - current_total
+    
+    if diff != 0:
+        new_expense = {
+            "Category": cat,
+            "Amount": int(diff),
+            "Date": str(datetime.date.today()),
+            "Note": "Manual Update"
+        }
+        st.session_state.data["expenses"].append(new_expense)
+        save_data(st.session_state.data)
 
-with col3:
-    mode_label = "💻 Desktop" if not st.session_state.desktop_mode else "📱 Mobile"
-    if st.button(mode_label, use_container_width=True):
-        st.session_state.desktop_mode = not st.session_state.desktop_mode
-        st.rerun()
 
-st.markdown("---")
 
-# ---- INCOME ----
-income = st.number_input("💰 Monthly Income", min_value=0, value=st.session_state.income, 
-                        step=1000, key="income_input")
-if income != st.session_state.income:
-    st.session_state.income = income
-    save_data()
+def set_max_spent(cat, budget, input_key):
+    current_total = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
+    diff = budget - current_total
+    if diff != 0:
+        new_expense = {
+            "Category": cat,
+            "Amount": int(diff),
+            "Date": str(datetime.date.today()),
+            "Note": "Max Button"
+        }
+        st.session_state.data["expenses"].append(new_expense)
+        save_data(st.session_state.data)
+        # Update the input key to reflect the new total (which is the budget)
+        st.session_state[input_key] = int(budget)
 
-# ---- METRICS ----
-total_budget = sum(cat.get('budget', 0) for cat in st.session_state.categories.values())
-total_spent = sum(cat.get('spent', 0) for cat in st.session_state.categories.values())
-remaining = st.session_state.income - total_spent
+def add_category(section, name, budget):
+    if name:
+        st.session_state.data[section][name] = budget
+        save_data(st.session_state.data)
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Budget", f"₹{total_budget:,}")
-col2.metric("Spent", f"₹{total_spent:,}")
-col3.metric("Left", f"₹{remaining:,}")
+def delete_category(section, name):
+    if name in st.session_state.data[section]:
+        del st.session_state.data[section][name]
+        save_data(st.session_state.data)
 
-if st.session_state.income > 0:
-    progress = min(total_spent / st.session_state.income, 1.0)
-    st.progress(progress)
-    st.caption(f"{progress*100:.1f}% of income spent")
+def get_weeks_in_month(year, month):
+    """Returns a list of (start_date, end_date) tuples for each week in the month."""
+    cal = calendar.monthcalendar(year, month)
+    weeks = []
+    for week in cal:
+        # week is a list of 7 days, 0 means day belongs to other month
+        days = [d for d in week if d != 0]
+        if not days:
+            continue
+        start_day = days[0]
+        end_day = days[-1]
+        start_date = datetime.date(year, month, start_day)
+        end_date = datetime.date(year, month, end_day)
+        weeks.append((start_date, end_date))
+    return weeks
 
-st.markdown("---")
+# --- Plotting ---
+def render_summary_plot():
+    summary_data = []
+    total_earnings = st.session_state.data["earnings"]
+    
+    # Exclude 'debts' from plot as requested
+    for section in ["needs", "wants", "savings"]:
+        # Budget/Total
+        budget = sum(st.session_state.data[section].values())
+        
+        # Spent/Paid
+        # Get categories in this section
+        section_cats = st.session_state.data[section].keys()
+        spent = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] in section_cats)
+        
+        # Calculate Percentage of Total Earnings
+        # "percentage calculation in plots should be out of total income"
+        pct_spent = (spent / total_earnings * 100) if total_earnings > 0 else 0
+        
+        summary_data.append({"Category": section.capitalize(), "Type": "Spent %", "Percentage": pct_spent, "Amount": spent, "Budget": budget})
+    
+    df_plot = pd.DataFrame(summary_data)
+    
+    if not df_plot.empty:
+        # Create Bar Chart
+        base = alt.Chart(df_plot).encode(
+            x=alt.X('Category', axis=alt.Axis(labelAngle=0)),
+            y=alt.Y('Percentage', axis=alt.Axis(title='% of Income')),
+            color=alt.Color('Category', legend=None),
+            tooltip=['Category', 'Percentage', 'Amount', 'Budget']
+        )
 
-# ---- CATEGORIES ----
-st.markdown("### Categories")
+        chart = base.mark_bar().properties(
+            title="Spending as % of Income",
+            height=200
+        )
+        
+        st.altair_chart(chart, use_container_width=True)
 
-if st.session_state.desktop_mode:
-    # Desktop Mode - Table view
-    if st.session_state.categories:
-        for cat_name in list(st.session_state.categories.keys()):
-            cat = st.session_state.categories[cat_name]
-            
-            col1, col2, col3, col4, col5 = st.columns([2.5, 1.5, 1.5, 0.8, 0.8])
-            
-            with col1:
-                st.markdown(f"<div style='padding-top: 8px; color: #f0f6fc;'>{cat_name}</div>", 
-                           unsafe_allow_html=True)
-            
-            with col2:
-                spent = st.number_input("Spent", min_value=0, value=cat.get('spent', 0),
-                                       step=100, key=f"spent_{cat_name}", label_visibility="collapsed")
-                if spent != cat.get('spent', 0):
-                    cat['spent'] = spent
-                    save_data()
-            
-            with col3:
-                budget = st.number_input("Budget", min_value=0, value=cat.get('budget', 0),
-                                        step=100, key=f"budget_{cat_name}", label_visibility="collapsed")
-                if budget != cat.get('budget', 0):
-                    cat['budget'] = budget
-                    save_data()
-            
-            with col4:
-                is_variable = cat_name in st.session_state.variable_categories
-                if st.checkbox("📊", value=is_variable, key=f"var_{cat_name}", help="Track weekly"):
-                    if not is_variable:
-                        st.session_state.variable_categories.append(cat_name)
-                        save_data()
-                else:
-                    if is_variable:
-                        st.session_state.variable_categories.remove(cat_name)
-                        save_data()
-            
-            with col5:
-                if st.button("×", key=f"del_{cat_name}", help="Delete"):
-                    del st.session_state.categories[cat_name]
-                    if cat_name in st.session_state.variable_categories:
-                        st.session_state.variable_categories.remove(cat_name)
-                    save_data()
-                    st.rerun()
+# --- UI ---
+current_month_name = datetime.datetime.now().strftime("%B %Y")
+st.title(f"💰 Budget Tracker - {current_month_name}")
+
+# --- Top Section: Total Summary & Weekly Spends ---
+total_earnings, total_spent, remaining = calculate_totals()
+total_budget_all = sum(sum(st.session_state.data[k].values()) for k in ["needs", "wants", "savings", "debts"])
+
+st.subheader("Total Summary")
+m1, m2, m3 = st.columns(3)
+m1.metric("Remaining Funds", f"₹{int(remaining):,}")
+m2.metric("Total Spent", f"₹{int(total_spent):,}")
+m3.metric("Total Budgeted", f"₹{int(total_budget_all):,}")
+
+st.divider()
+
+# Weekly Spends
+st.header("Weekly Spends")
+now = datetime.datetime.now()
+weeks = get_weeks_in_month(now.year, now.month)
+
+# Calculate Totals for Dynamic Budgeting (Using values from calculate_totals where possible, but need raw spent for remaining calculation logic if different)
+# Actually remaining from calculate_totals includes debt subtraction. 
+# The previous weekly budget logic used: remaining_funds = total_earnings - total_spent_all (without debt?)
+# Let's check previous code: remaining_funds = total_earnings - total_spent_all. 
+# And calculate_totals: remaining = total_earnings - total_spent - total_debt.
+# If user wants weekly budget to be based on "Remaining Funds" (which usually implies disposable income), 
+# we should probably use the 'remaining' from calculate_totals which accounts for debt.
+# User said: "weekly spends budget should be calculayted based on Remaining Funds"
+# So I will use the 'remaining' variable from calculate_totals.
+
+# Calculate weeks remaining (including current week)
+current_week_idx = -1
+for i, (start, end) in enumerate(weeks):
+    if start <= now.date() <= end:
+        current_week_idx = i
+        break
+
+# If month is over or not started, handle gracefully
+if current_week_idx == -1:
+    if now.day > 15: # End of month
+        weeks_remaining = 0
+    else: # Start of month
+        weeks_remaining = len(weeks)
 else:
-    # Mobile Mode - Card view
-    for cat_name in list(st.session_state.categories.keys()):
-        cat = st.session_state.categories[cat_name]
-        
-        with st.container():
-            st.markdown(f"**{cat_name}**")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                spent = st.number_input("Spent", min_value=0, value=cat.get('spent', 0),
-                                       step=100, key=f"spent_{cat_name}")
-                if spent != cat.get('spent', 0):
-                    cat['spent'] = spent
-                    save_data()
-            
-            with col2:
-                budget = st.number_input("Budget", min_value=0, value=cat.get('budget', 0),
-                                        step=100, key=f"budget_{cat_name}")
-                if budget != cat.get('budget', 0):
-                    cat['budget'] = budget
-                    save_data()
-            
-            col1, col2, col3 = st.columns([1, 1, 1])
-            with col1:
-                is_variable = cat_name in st.session_state.variable_categories
-                if st.checkbox("Track weekly", value=is_variable, key=f"var_{cat_name}"):
-                    if not is_variable:
-                        st.session_state.variable_categories.append(cat_name)
-                        save_data()
-                else:
-                    if is_variable:
-                        st.session_state.variable_categories.remove(cat_name)
-                        save_data()
-            
-            with col3:
-                if st.button("Delete", key=f"del_{cat_name}", use_container_width=True):
-                    del st.session_state.categories[cat_name]
-                    if cat_name in st.session_state.variable_categories:
-                        st.session_state.variable_categories.remove(cat_name)
-                    save_data()
-                    st.rerun()
-            
-            st.markdown("---")
+    weeks_remaining = len(weeks) - current_week_idx
 
-# ---- ADD CATEGORY ----
-with st.form("add_category", clear_on_submit=True):
-    col1, col2, col3 = st.columns([3, 2, 2])
-    with col1:
-        new_name = st.text_input("Name", placeholder="e.g. Groceries")
-    with col2:
-        new_budget = st.number_input("Budget", min_value=0, step=100)
-    with col3:
-        st.write("")
-        st.write("")
-        if st.form_submit_button("Add", use_container_width=True, type="primary"):
-            if new_name and new_name not in st.session_state.categories:
-                st.session_state.categories[new_name] = {'budget': new_budget, 'spent': 0}
-                save_data()
+# Dynamic Weekly Budget
+dynamic_weekly_budget = remaining / weeks_remaining if weeks_remaining > 0 else 0
+
+# Get Wants categories for filtering
+wants_categories = list(st.session_state.data["wants"].keys())
+
+# Display Weeks
+wh1, wh2, wh3, wh4 = st.columns([1.5, 2, 1.5, 1.5])
+wh1.markdown("**Week**")
+wh2.markdown("**Dates**")
+wh3.markdown("**Budget**")
+wh4.markdown("**Spent**")
+
+for i, (start, end) in enumerate(weeks):
+    week_num = i + 1
+    
+    # Filter expenses for this week AND belongs to Wants
+    week_expenses = [
+        x for x in st.session_state.data["expenses"] 
+        if start <= datetime.datetime.strptime(x["Date"], "%Y-%m-%d").date() <= end
+        and x["Category"] in wants_categories
+    ]
+    week_spent = sum(x["Amount"] for x in week_expenses)
+    
+    # Status
+    is_past = end < now.date()
+    is_current = start <= now.date() <= end
+    
+    status_icon = "🔒" if is_past else ("👉" if is_current else "📅")
+    
+    # Determine budget to show
+    if is_past:
+        display_budget = "-" 
+    else:
+        display_budget = f"₹{int(dynamic_weekly_budget):,}"
+    
+    c1, c2, c3, c4 = st.columns([1.5, 2, 1.5, 1.5])
+    c1.write(f"{status_icon} **Week {week_num}**")
+    c2.write(f"{start.strftime('%d %b')} - {end.strftime('%d %b')}")
+    c3.write(display_budget)
+    c4.write(f"₹{int(week_spent):,}")
+
+st.divider()
+
+# Summary Plot
+render_summary_plot()
+
+st.divider()
+
+# 1. Earnings
+st.subheader("Monthly Income")
+new_earnings = st.number_input(
+    "Earnings", 
+    value=int(st.session_state.data["earnings"]), 
+    step=100,
+    min_value=0,
+    format="%d",
+    label_visibility="collapsed"
+)
+if new_earnings != st.session_state.data["earnings"]:
+    st.session_state.data["earnings"] = new_earnings
+    save_data(st.session_state.data)
+    st.rerun()
+
+st.divider()
+
+# --- Reusable Section Renderer ---
+def render_section(title, section_key):
+    # Calculate Total for Section
+    section_total = sum(st.session_state.data[section_key].values())
+    earnings = st.session_state.data["earnings"]
+    
+    # Determine Title with Percentage (if not Debt)
+    if section_key == "debts":
+        display_title = title
+        col2_header = "Total Debt"
+        col3_header = "Paid"
+    else:
+        percentage = (section_total / earnings * 100) if earnings > 0 else 0
+        display_title = f"{title} ({percentage:.1f}%)"
+        col2_header = "Budget"
+        col3_header = "Spent"
+
+    st.header(display_title)
+    
+    # Headers
+    h1, h2, h3 = st.columns([2, 1.5, 2])
+    h1.markdown("**Category**")
+    h2.markdown(f"**{col2_header}**")
+    h3.markdown(f"**{col3_header}**")
+    
+    categories = list(st.session_state.data[section_key].keys())
+    
+    if not categories:
+        st.info(f"No categories in {title}. Add one below.")
+
+    for cat in categories:
+        budget = st.session_state.data[section_key][cat]
+        spent_so_far = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
+        
+        c1, c2, c3 = st.columns([2, 1.5, 2])
+        
+        # Col 1: Name + Delete
+        c1.write(f"**{cat}**")
+        
+        # Col 2: Budget / Total Debt
+        new_budget = c2.number_input(
+            col2_header, value=int(budget), min_value=0, step=50, key=f"bud_{section_key}_{cat}", label_visibility="collapsed", format="%d"
+        )
+        if new_budget != budget:
+            st.session_state.data[section_key][cat] = new_budget
+            save_data(st.session_state.data)
+            st.rerun()
+            
+        # Col 3: Spent / Paid + Max
+        sc1, sc2 = c3.columns([3, 1])
+        spent_key = f"spent_{section_key}_{cat}"
+        
+        # Ensure key exists in session state for correct updates
+        if spent_key not in st.session_state:
+            st.session_state[spent_key] = int(spent_so_far)
+            
+        # Determine max_value for input (only for debts)
+        input_max = None
+        if section_key == "debts":
+            input_max = int(budget)
+            # Ensure current value doesn't exceed max (visual clamp)
+            if st.session_state[spent_key] > input_max:
+                st.session_state[spent_key] = input_max
+        
+        # Use key only, no value argument to avoid conflicts
+        # Construct kwargs to avoid passing 'value' if key exists
+        input_kwargs = {
+            "label": col3_header,
+            "step": 10,
+            "min_value": 0,
+            "max_value": input_max,
+            "key": spent_key,
+            "label_visibility": "collapsed",
+            "format": "%d",
+            "on_change": update_spent_callback,
+            "args": (cat, spent_key)
+        }
+        
+        if spent_key not in st.session_state:
+            # Only set value if key doesn't exist (though we set it above, so this might be redundant but safe)
+            input_kwargs["value"] = int(spent_so_far)
+            
+        sc1.number_input(**input_kwargs)
+        sc2.button(
+            "📍", 
+            key=f"max_{section_key}_{cat}", 
+            help=f"Set {col3_header} to {col2_header}", 
+            on_click=set_max_spent, 
+            args=(cat, int(new_budget), spent_key)
+        )
+
+    # Add Category to Section
+    with st.expander(f"➕ Add to {title}"):
+        with st.form(f"add_{section_key}"):
+            ac1, ac2 = st.columns([2, 1])
+            new_name = ac1.text_input("Name")
+            new_bud = ac2.number_input(col2_header, min_value=0, step=50)
+            if st.form_submit_button("Add"):
+                add_category(section_key, new_name, new_bud)
                 st.rerun()
 
-# ---- WEEKLY SPENDING GUIDE ----
-if st.session_state.variable_categories and st.session_state.selected_month == get_current_month():
-    st.markdown("---")
-    st.markdown("### 📅 Weekly Budget")
-    
-    # Calculate weeks remaining in month
-    today = datetime.now()
-    days_in_month = (datetime(today.year, today.month % 12 + 1, 1) - datetime(today.year, today.month, 1)).days
-    days_remaining = days_in_month - today.day + 1
-    weeks_remaining = max(days_remaining / 7, 1)
-    
-    cols = st.columns(len(st.session_state.variable_categories))
-    
-    for idx, cat_name in enumerate(st.session_state.variable_categories):
-        if cat_name in st.session_state.categories:
-            cat = st.session_state.categories[cat_name]
-            budget = cat.get('budget', 0)
-            spent = cat.get('spent', 0)
-            remaining_budget = budget - spent
-            weekly = remaining_budget / weeks_remaining if weeks_remaining > 0 else 0
-            
-            with cols[idx]:
-                color = "#3fb950" if remaining_budget > 0 else "#f85149"
-                st.markdown(f"""
-                <div class='weekly-card'>
-                    <div class='weekly-title'>{cat_name}</div>
-                    <div class='weekly-amount' style='color: {color};'>₹{int(weekly):,}</div>
-                    <div class='weekly-subtitle'>per week</div>
-                    <div class='weekly-subtitle'>₹{int(remaining_budget):,} left</div>
-                </div>
-                """, unsafe_allow_html=True)
+st.divider()
 
-# ---- CHARTS ----
-if st.session_state.categories:
-    st.markdown("---")
-    st.markdown("### 📊 Overview")
-    
-    col1, col2 = st.columns(2)
-    
-    # Bar chart
-    with col1:
-        df = pd.DataFrame([
-            {'Category': name, 'Spent': data.get('spent', 0), 
-             'Budget': data.get('budget', 0)}
-            for name, data in st.session_state.categories.items()
-        ])
-        
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            y=df['Category'], 
-            x=df['Spent'], 
-            name='Spent',
-            orientation='h',
-            marker_color='#58a6ff',
-            text=[f"₹{x:,}" for x in df['Spent']],
-            textposition='inside'
-        ))
-        fig.add_trace(go.Bar(
-            y=df['Category'], 
-            x=df['Budget'] - df['Spent'], 
-            name='Left',
-            orientation='h',
-            marker_color='#30363d',
-            text=[f"₹{x:,}" if x > 0 else "" for x in df['Budget'] - df['Spent']],
-            textposition='inside'
-        ))
-        
-        fig.update_layout(
-            barmode='stack',
-            height=250,
-            margin=dict(l=0, r=0, t=0, b=0),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#8b949e', size=10),
-            showlegend=False,
-            xaxis=dict(showgrid=False, showticklabels=False),
-            yaxis=dict(showgrid=False)
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Pie chart
-    with col2:
-        spending_data = [(name, data.get('spent', 0)) 
-                        for name, data in st.session_state.categories.items() 
-                        if data.get('spent', 0) > 0]
-        
-        if spending_data:
-            labels, values = zip(*spending_data)
-            
-            fig2 = go.Figure(data=[go.Pie(
-                labels=labels,
-                values=values,
-                hole=.6,
-                marker=dict(colors=['#58a6ff', '#1f6feb', '#388bfd', '#1158c7', '#0d419d', '#032d5d']),
-                textinfo='label+percent',
-                textposition='outside',
-                textfont=dict(size=9)
-            )])
-            
-            fig2.update_layout(
-                height=250,
-                margin=dict(l=0, r=0, t=0, b=0),
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#8b949e', size=9),
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig2, use_container_width=True)
+# 2. Sections
+render_section("Needs", "needs")
+st.divider()
+render_section("Wants", "wants")
+st.divider()
+render_section("Savings", "savings")
+st.divider()
+render_section("Debts", "debts")
+st.divider()
+
+
