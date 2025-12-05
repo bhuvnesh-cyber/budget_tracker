@@ -329,34 +329,40 @@ total_budget_all = sum(sum(st.session_state.data[k].values()) for k in ["needs",
 # Mobile-optimized CSS
 st.markdown("""
     <style>
-    /* Global Styles */
+    /* Global Styles - Cosmic Purple Theme */
     .block-container {
         padding-top: 2rem;
         padding-bottom: 5rem;
-        max-width: 600px; /* Mobile width constraint */
+        max-width: 600px;
+        background: linear-gradient(180deg, #0f0a1e 0%, #1a0b2e 100%);
     }
     
     h1, h2, h3 {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 700;
         letter-spacing: -0.5px;
-        color: #f8fafc;
+        background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
     
-    /* Modern Cards with Gradient */
+    /* Glassmorphic Cards with Gradient */
     .summary-card {
-        background: linear-gradient(145deg, #1e293b, #0f172a);
-        border-radius: 16px;
-        padding: 20px;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-        border: 1px solid #334155;
-        margin-bottom: 24px;
+        background: linear-gradient(135deg, rgba(138, 43, 226, 0.15) 0%, rgba(123, 31, 162, 0.1) 100%);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 24px;
+        box-shadow: 0 8px 32px 0 rgba(138, 43, 226, 0.2),
+                    inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 28px;
     }
     
     .summary-grid {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
-        gap: 12px;
+        gap: 16px;
         text-align: center;
     }
     
@@ -367,121 +373,150 @@ st.markdown("""
     
     .summary-label {
         font-size: 0.7rem;
-        color: #94a3b8;
+        color: #b794f6;
         text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-bottom: 6px;
+        letter-spacing: 1.5px;
+        margin-bottom: 8px;
         font-weight: 600;
     }
     
     .summary-value {
-        font-size: 1.1rem;
-        font-weight: 800;
-        color: #f1f5f9;
+        font-size: 1.2rem;
+        font-weight: 900;
+        color: #f3e7ff;
+        text-shadow: 0 0 10px rgba(147, 51, 234, 0.3);
     }
     
-    .positive { color: #34d399 !important; } /* Emerald 400 */
-    .negative { color: #f87171 !important; } /* Red 400 */
+    .positive { 
+        color: #4ade80 !important;
+        text-shadow: 0 0 15px rgba(74, 222, 128, 0.4);
+    }
+    .negative { 
+        color: #fb7185 !important;
+        text-shadow: 0 0 15px rgba(251, 113, 133, 0.4);
+    }
     
     /* Section Headers */
     .section-header {
-        font-size: 1.1rem;
+        font-size: 1.15rem;
         font-weight: 700;
-        margin-top: 32px;
-        margin-bottom: 16px;
+        margin-top: 36px;
+        margin-bottom: 18px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        color: #e2e8f0;
+        color: #e9d5ff;
     }
     
     .section-badge {
         font-size: 0.75rem;
-        background-color: #1e293b;
-        padding: 4px 10px;
+        background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+        padding: 5px 12px;
         border-radius: 20px;
-        color: #94a3b8;
-        border: 1px solid #334155;
+        color: #faf5ff;
+        border: 1px solid rgba(168, 85, 247, 0.3);
+        font-weight: 700;
+        box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
     }
 
-    /* Category Cards */
+    /* Category Cards - Glassmorphic */
     .stExpander {
         background-color: transparent !important;
         border: none !important;
     }
     
     .stExpander > details {
-        background-color: #1e293b;
-        border-radius: 12px;
-        border: 1px solid #334155;
-        margin-bottom: 12px;
+        background: linear-gradient(135deg, rgba(88, 28, 135, 0.2) 0%, rgba(76, 29, 149, 0.15) 100%);
+        backdrop-filter: blur(8px);
+        border-radius: 16px;
+        border: 1px solid rgba(168, 85, 247, 0.2);
+        margin-bottom: 14px;
         overflow: hidden;
-        transition: border-color 0.2s;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 16px rgba(124, 58, 237, 0.1);
     }
     
     .stExpander > details:hover {
-        border-color: #64748b;
+        border-color: rgba(168, 85, 247, 0.5);
+        box-shadow: 0 8px 24px rgba(124, 58, 237, 0.25);
+        transform: translateY(-2px);
     }
     
     .stExpander > details > summary {
-        padding: 14px 16px !important;
-        background-color: #1e293b !important;
-        border-bottom: 1px solid #334155;
+        padding: 16px 18px !important;
+        background: linear-gradient(135deg, rgba(109, 40, 217, 0.15) 0%, rgba(124, 58, 237, 0.1) 100%) !important;
+        border-bottom: 1px solid rgba(168, 85, 247, 0.2);
         font-weight: 600;
         font-size: 1rem;
-        color: #f1f5f9;
+        color: #e9d5ff;
     }
     
     .stExpander > details > div {
-        padding: 20px !important;
-        background-color: #0f172a;
+        padding: 22px !important;
+        background: linear-gradient(135deg, rgba(76, 29, 149, 0.1) 0%, rgba(88, 28, 135, 0.05) 100%);
     }
     
-    /* Inputs */
+    /* Inputs with Neon Glow */
     .stNumberInput input {
-        background-color: #020617 !important;
-        border: 1px solid #334155 !important;
-        border-radius: 8px !important;
-        color: #f8fafc !important;
+        background-color: rgba(30, 10, 60, 0.6) !important;
+        border: 2px solid rgba(168, 85, 247, 0.3) !important;
+        border-radius: 10px !important;
+        color: #f3e7ff !important;
+        font-weight: 600;
     }
     
     .stNumberInput input:focus {
-        border-color: #38bdf8 !important; /* Sky 400 */
+        border-color: #a855f7 !important;
+        box-shadow: 0 0 20px rgba(168, 85, 247, 0.4) !important;
     }
     
-    /* Buttons */
+    /* Buttons with Gradient */
     .stButton button {
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        background-color: #334155;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
+        background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
         color: white;
         border: none;
-        transition: background-color 0.2s;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
     }
     
     .stButton button:hover {
-        background-color: #475569;
-        color: white;
+        background: linear-gradient(135deg, #8b5cf6 0%, #c084fc 100%);
+        box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5);
+        transform: translateY(-2px);
     }
     
-    /* Progress Bar */
+    /* Progress Bar with Gradient */
     .progress-bg {
-        background-color: #0f172a;
-        height: 8px;
-        border-radius: 4px;
+        background: rgba(30, 10, 60, 0.6);
+        height: 10px;
+        border-radius: 10px;
         overflow: hidden;
-        margin-top: 10px;
-        border: 1px solid #334155;
+        margin-top: 12px;
+        border: 1px solid rgba(168, 85, 247, 0.2);
     }
     
     .progress-fill {
         height: 100%;
-        background: linear-gradient(90deg, #34d399, #10b981);
-        border-radius: 4px;
+        background: linear-gradient(90deg, #4ade80 0%, #22c55e 100%);
+        border-radius: 10px;
+        box-shadow: 0 0 15px rgba(74, 222, 128, 0.5);
     }
     
-    .progress-fill.warning { background: linear-gradient(90deg, #facc15, #eab308); }
-    .progress-fill.danger { background: linear-gradient(90deg, #f87171, #ef4444); }
+    .progress-fill.warning { 
+        background: linear-gradient(90deg, #fbbf24 0%, #f59e0b 100%);
+        box-shadow: 0 0 15px rgba(251, 191, 36, 0.5);
+    }
+    .progress-fill.danger { 
+        background: linear-gradient(90deg, #fb7185 0%, #f43f5e 100%);
+        box-shadow: 0 0 15px rgba(251, 113, 133, 0.5);
+    }
+    
+    /* Caption Text */
+    .stCaption, [data-testid="stCaptionContainer"] {
+        color: #c4b5fd !important;
+    }
     
     </style>
 """, unsafe_allow_html=True)
