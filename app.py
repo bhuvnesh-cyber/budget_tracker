@@ -195,14 +195,24 @@ def render_summary_plot():
     
     if not df_plot.empty:
         # Create Bar Chart
+        # Create Bar Chart with Text Labels
         base = alt.Chart(df_plot).encode(
             x=alt.X('Category', axis=alt.Axis(labelAngle=0)),
             y=alt.Y('Percentage', axis=alt.Axis(title='% of Income')),
-            color=alt.Color('Category', legend=None),
-            tooltip=['Category', 'Percentage', 'Amount', 'Budget']
+            color=alt.Color('Category', legend=None)
         )
 
-        chart = base.mark_bar().properties(
+        bars = base.mark_bar()
+        
+        text = base.mark_text(
+            align='center',
+            baseline='bottom',
+            dy=-5  # Nudge text up
+        ).encode(
+            text=alt.Text('Percentage', format='.1f')
+        )
+
+        chart = (bars + text).properties(
             title="Spending as % of Income",
             height=200
         )
@@ -218,10 +228,60 @@ total_earnings, total_spent, remaining = calculate_totals()
 total_budget_all = sum(sum(st.session_state.data[k].values()) for k in ["needs", "wants", "savings", "debts"])
 
 st.subheader("Total Summary")
-m1, m2, m3 = st.columns(3)
-m1.metric("Remaining Funds", f"₹{int(remaining):,}")
-m2.metric("Total Spent", f"₹{int(total_spent):,}")
-m3.metric("Total Budgeted", f"₹{int(total_budget_all):,}")
+
+# Custom CSS for the summary dashboard to ensure horizontal layout on mobile
+st.markdown("""
+    <style>
+    .summary-container {
+        display: flex;
+        flex-direction: row;
+        justify_content: space-between;
+        background-color: #1E1E1E;
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        border: 1px solid #333;
+    }
+    .summary-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        flex: 1;
+    }
+    .summary-label {
+        font-size: 0.8rem;
+        color: #aaa;
+        margin-bottom: 5px;
+    }
+    .summary-value {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #fff;
+    }
+    .summary-value.positive { color: #4CAF50; }
+    .summary-value.negative { color: #FF5252; }
+    </style>
+""", unsafe_allow_html=True)
+
+remaining_color = "positive" if remaining >= 0 else "negative"
+
+st.markdown(f"""
+    <div class="summary-container">
+        <div class="summary-item">
+            <span class="summary-label">Remaining</span>
+            <span class="summary-value {remaining_color}">₹{int(remaining):,}</span>
+        </div>
+        <div class="summary-item" style="border-left: 1px solid #333; border-right: 1px solid #333;">
+            <span class="summary-label">Spent</span>
+            <span class="summary-value">₹{int(total_spent):,}</span>
+        </div>
+        <div class="summary-item">
+            <span class="summary-label">Budgeted</span>
+            <span class="summary-value">₹{int(total_budget_all):,}</span>
+        </div>
+    </div>
+""", unsafe_allow_html=True)
 
 st.divider()
 
@@ -368,33 +428,18 @@ def render_section(title, section_key):
         spent_so_far = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
         
         with st.container(border=True):
-            # Header Row: Name | Max Button | Delete Button
-            c_name, c_max, c_del = st.columns([6, 1, 1])
-            c_name.markdown(f"**{cat}**")
+            # Header Row: Name | Delete Button
+            # Using columns to push delete button to the right
+            c_head_1, c_head_2 = st.columns([5, 1])
+            c_head_1.markdown(f"**{cat}**")
             
-            # Max Button (Set Spent to Budget)
-            # We need the spent_key defined before the button callback
-            spent_key = f"spent_{section_key}_{cat}"
-            
-            # Ensure key exists
-            if spent_key not in st.session_state:
-                st.session_state[spent_key] = int(spent_so_far)
-            
-            c_max.button(
-                "📍", 
-                key=f"max_{section_key}_{cat}", 
-                help=f"Set {col3_header} to {col2_header}", 
-                on_click=set_max_spent, 
-                args=(cat, int(budget), spent_key)
-            )
-            
-            # Delete Button
-            if c_del.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete Category"):
+            if c_head_2.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete Category"):
                 delete_category(section_key, cat)
                 st.rerun()
             
-            # Input Row: Budget | Spent
-            c_bud, c_spent = st.columns(2)
+            # Input Row: Budget | Spent | Max Button
+            # We want the Max button to be next to the Spent input
+            c_bud, c_spent, c_max = st.columns([3, 3, 1])
             
             # Budget Input
             new_budget = c_bud.number_input(
@@ -410,12 +455,17 @@ def render_section(title, section_key):
                 save_data(st.session_state.data)
                 st.rerun()
                 
-            # Spent Input
+            # Spent Input & Max Button
+            spent_key = f"spent_{section_key}_{cat}"
+            
+            # Ensure key exists
+            if spent_key not in st.session_state:
+                st.session_state[spent_key] = int(spent_so_far)
+
             # Determine max_value for input (only for debts)
             input_max = None
             if section_key == "debts":
                 input_max = int(budget)
-                # Ensure current value doesn't exceed max (visual clamp)
                 if st.session_state[spent_key] > input_max:
                     st.session_state[spent_key] = input_max
             
@@ -434,6 +484,22 @@ def render_section(title, section_key):
                 input_kwargs["value"] = int(spent_so_far)
                 
             c_spent.number_input(**input_kwargs)
+            
+            # Max Button - Vertically aligned with input (using some spacing or just placement)
+            # Streamlit buttons align to top of column, inputs have labels. 
+            # To align, we can add a spacer or just accept top alignment.
+            # With label_visibility="visible" on inputs, the button will be high.
+            # Let's try to add a blank label to the button column to push it down? 
+            # Or just let it be.
+            c_max.write("") # Spacer for label height approx
+            c_max.write("") 
+            c_max.button(
+                "📍", 
+                key=f"max_{section_key}_{cat}", 
+                help=f"Set {col3_header} to {col2_header}", 
+                on_click=set_max_spent, 
+                args=(cat, int(budget), spent_key)
+            )
 
     # Add Category to Section
     with st.expander(f"➕ Add to {title}"):
