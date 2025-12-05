@@ -70,12 +70,20 @@ def get_current_month_dates():
 def calculate_totals():
     total_earnings = st.session_state.data["earnings"]
     
+    # Get all active categories to filter out orphaned expenses
+    active_cats = set()
+    for section in ["needs", "wants", "savings", "debts"]:
+        active_cats.update(st.session_state.data[section].keys())
+    
     # Separate expenses into Debt and Non-Debt
     debt_cats = list(st.session_state.data["debts"].keys())
     expenses = st.session_state.data["expenses"]
     
-    spent_debt = sum(x["Amount"] for x in expenses if x["Category"] in debt_cats)
-    spent_non_debt = sum(x["Amount"] for x in expenses if x["Category"] not in debt_cats)
+    # Filter expenses to only include active categories
+    valid_expenses = [x for x in expenses if x["Category"] in active_cats]
+    
+    spent_debt = sum(x["Amount"] for x in valid_expenses if x["Category"] in debt_cats)
+    spent_non_debt = sum(x["Amount"] for x in valid_expenses if x["Category"] not in debt_cats)
     
     total_debt_budget = sum(st.session_state.data["debts"].values())
     
@@ -136,6 +144,11 @@ def add_category(section, name, budget):
 def delete_category(section, name):
     if name in st.session_state.data[section]:
         del st.session_state.data[section][name]
+        # Remove expenses for this category to keep totals accurate
+        st.session_state.data["expenses"] = [
+            x for x in st.session_state.data["expenses"] 
+            if x["Category"] != name
+        ]
         save_data(st.session_state.data)
 
 def get_weeks_in_month(year, month):
@@ -434,3 +447,5 @@ render_section("Savings", "savings")
 st.divider()
 render_section("Debts", "debts")
 st.divider()
+
+
