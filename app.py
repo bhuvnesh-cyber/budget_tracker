@@ -389,78 +389,113 @@ def render_section(title, section_key):
         budget = st.session_state.data[section_key][cat]
         spent_so_far = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
         
+        # Minimized state tracking
+        minimize_key = f"minimize_{section_key}_{cat}"
+        if minimize_key not in st.session_state:
+            st.session_state[minimize_key] = False
+        
         with st.container(border=True):
-            # Single row with category name and delete button
-            col_name, col_del = st.columns([5, 1])
+            # CSS for compact header with corner delete button
+            st.markdown("""
+                <style>
+                .cat-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 8px;
+                }
+                .cat-name {
+                    font-size: 1.1rem;
+                    font-weight: 600;
+                    flex-grow: 1;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+            
+            # Header row: Name, Minimize, Delete (all in one line)
+            col_name, col_min, col_del = st.columns([4, 0.5, 0.5])
+            
             with col_name:
-                st.markdown(f"### {cat}")
+                st.markdown(f'<div class="cat-name">{cat}</div>', unsafe_allow_html=True)
+            
+            with col_min:
+                icon = "➖" if not st.session_state[minimize_key] else "➕"
+                if st.button(icon, key=f"min_{section_key}_{cat}", help="Minimize/Expand"):
+                    st.session_state[minimize_key] = not st.session_state[minimize_key]
+                    st.rerun()
+            
             with col_del:
                 if st.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete"):
                     delete_category(section_key, cat)
                     st.rerun()
             
-            # Budget and Spent in 2 columns for compact layout
-            col_bud, col_spent = st.columns(2)
-            
-            with col_bud:
-                st.caption(col2_header)
-                new_budget = st.number_input(
-                    col2_header, 
-                    value=int(budget), 
-                    min_value=0, 
-                    step=50, 
-                    key=f"bud_{section_key}_{cat}", 
-                    format="%d",
-                    label_visibility="collapsed"
-                )
-                if new_budget != budget:
-                    st.session_state.data[section_key][cat] = new_budget
-                    save_data(st.session_state.data)
-                    st.rerun()
-            
-            with col_spent:
-                st.caption(col3_header)
+            # Only show details if not minimized
+            if not st.session_state[minimize_key]:
+                # Budget and Spent in 2 columns for compact layout
+                col_bud, col_spent = st.columns(2)
                 
-                # Spent input with max button inline
-                col_input, col_max = st.columns([4, 1])
-                
-                spent_key = f"spent_{section_key}_{cat}"
-                
-                if spent_key not in st.session_state:
-                    st.session_state[spent_key] = int(spent_so_far)
-
-                input_max = None
-                if section_key == "debts":
-                    input_max = int(budget)
-                    if st.session_state[spent_key] > input_max:
-                        st.session_state[spent_key] = input_max
-                
-                input_kwargs = {
-                    "label": col3_header,
-                    "step": 10,
-                    "min_value": 0,
-                    "max_value": input_max,
-                    "key": spent_key,
-                    "format": "%d",
-                    "on_change": update_spent_callback,
-                    "args": (cat, spent_key),
-                    "label_visibility": "collapsed"
-                }
-                
-                if spent_key not in st.session_state:
-                    input_kwargs["value"] = int(spent_so_far)
-                
-                with col_input:
-                    st.number_input(**input_kwargs)
-                
-                with col_max:
-                    st.button(
-                        "📍", 
-                        key=f"max_{section_key}_{cat}",
-                        help="Max",
-                        on_click=set_max_spent, 
-                        args=(cat, int(budget), spent_key)
+                with col_bud:
+                    st.caption(col2_header)
+                    new_budget = st.number_input(
+                        col2_header, 
+                        value=int(budget), 
+                        min_value=0, 
+                        step=50, 
+                        key=f"bud_{section_key}_{cat}", 
+                        format="%d",
+                        label_visibility="collapsed"
                     )
+                    if new_budget != budget:
+                        st.session_state.data[section_key][cat] = new_budget
+                        save_data(st.session_state.data)
+                        st.rerun()
+                
+                with col_spent:
+                    st.caption(col3_header)
+                    
+                    # Spent input with max button inline
+                    col_input, col_max = st.columns([4, 1])
+                    
+                    spent_key = f"spent_{section_key}_{cat}"
+                    
+                    if spent_key not in st.session_state:
+                        st.session_state[spent_key] = int(spent_so_far)
+
+                    input_max = None
+                    if section_key == "debts":
+                        input_max = int(budget)
+                        if st.session_state[spent_key] > input_max:
+                            st.session_state[spent_key] = input_max
+                    
+                    input_kwargs = {
+                        "label": col3_header,
+                        "step": 10,
+                        "min_value": 0,
+                        "max_value": input_max,
+                        "key": spent_key,
+                        "format": "%d",
+                        "on_change": update_spent_callback,
+                        "args": (cat, spent_key),
+                        "label_visibility": "collapsed"
+                    }
+                    
+                    if spent_key not in st.session_state:
+                        input_kwargs["value"] = int(spent_so_far)
+                    
+                    with col_input:
+                        st.number_input(**input_kwargs)
+                    
+                    with col_max:
+                        st.button(
+                            "📍", 
+                            key=f"max_{section_key}_{cat}",
+                            help="Max",
+                            on_click=set_max_spent, 
+                            args=(cat, int(budget), spent_key)
+                        )
+            else:
+                # Show compact summary when minimized
+                st.caption(f"{col3_header}: ₹{int(spent_so_far):,} / ₹{int(budget):,}")
 
     # Add Category
     with st.expander(f"➕ Add {title}"):
