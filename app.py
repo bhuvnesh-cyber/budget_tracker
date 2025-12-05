@@ -447,17 +447,16 @@ def render_section(title, section_key, icon):
         if minimize_key not in st.session_state:
             st.session_state[minimize_key] = True  # Default to minimized
 
-        # Category card - similar to top summary
+        # Category card - Budget | Spent | Delete
         remaining_cat = budget - spent_so_far
-        remaining_color = "positive" if remaining_cat >= 0 else "negative"
         
-        # Container with delete button
-        col_main, col_del = st.columns([10, 1])
+        # Clickable card area and delete button
+        col_card, col_del = st.columns([9, 1])
         
-        with col_main:
-            # Make entire card clickable to expand/collapse
+        with col_card:
+            # Make card clickable to expand/collapse
             if st.button(
-                f"toggle_display_{section_key}_{cat}",
+                f"card_area_{section_key}_{cat}",
                 key=f"toggle_{section_key}_{cat}",
                 use_container_width=True,
                 help="Click to expand/collapse"
@@ -473,22 +472,20 @@ def render_section(title, section_key, icon):
         # Show the summary card
         icon_indicator = "▼" if not st.session_state[minimize_key] else "▶"
         st.markdown(f"""
-            <div style="background-color: #1a1a1a; padding: 12px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #2a2a2a; margin-top: -45px; pointer-events: none;">
+            <div style="background-color: #1a1a1a; padding: 12px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #2a2a2a; margin-top: -45px;">
                 <div style="font-size: 0.95rem; font-weight: 600; margin-bottom: 10px;">
                     {icon_indicator} {cat}
                 </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <div style="text-align: center; flex: 1;">
-                        <div style="font-size: 0.65rem; color: #aaa; margin-bottom: 4px; text-transform: uppercase;">LEFT</div>
-                        <div style="font-size: 0.9rem; font-weight: bold; color: {'#4CAF50' if remaining_cat >= 0 else '#FF5252'};">₹{int(remaining_cat):,}</div>
-                    </div>
-                    <div style="text-align: center; flex: 1; border-left: 1px solid #333; border-right: 1px solid #333;">
-                        <div style="font-size: 0.65rem; color: #aaa; margin-bottom: 4px; text-transform: uppercase;">{col3_header.upper()}</div>
-                        <div style="font-size: 0.9rem; font-weight: bold; color: #fff;">₹{int(spent_so_far):,}</div>
-                    </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div style="text-align: center; flex: 1;">
                         <div style="font-size: 0.65rem; color: #aaa; margin-bottom: 4px; text-transform: uppercase;">{col2_header.upper()}</div>
                         <div style="font-size: 0.9rem; font-weight: bold; color: #fff;">₹{int(budget):,}</div>
+                    </div>
+                    <div style="text-align: center; flex: 1; border-left: 1px solid #333;">
+                        <div style="font-size: 0.65rem; color: #aaa; margin-bottom: 4px; text-transform: uppercase;">{col3_header.upper()}</div>
+                        <div style="font-size: 0.9rem; font-weight: bold; color: #fff;">₹{int(spent_so_far):,}</div>
+                    </div>
+                    <div style="text-align: center; width: 40px;">
                     </div>
                 </div>
             </div>
