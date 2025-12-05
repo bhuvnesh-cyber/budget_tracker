@@ -447,28 +447,54 @@ def render_section(title, section_key, icon):
         if minimize_key not in st.session_state:
             st.session_state[minimize_key] = True  # Default to minimized
 
-        # Compact card with toggle - cleaner layout
-        col1, col2, col3 = st.columns([0.4, 5.8, 0.4])
+        # Category card - similar to top summary
+        remaining_cat = budget - spent_so_far
+        remaining_color = "positive" if remaining_cat >= 0 else "negative"
         
-        with col1:
-            icon = "▶" if st.session_state[minimize_key] else "▼"
-            st.button(icon, key=f"toggle_{section_key}_{cat}", help="Expand", use_container_width=True)
-            if st.session_state.get(f"toggle_{section_key}_{cat}"):
+        # Container with delete button
+        col_main, col_del = st.columns([10, 1])
+        
+        with col_main:
+            # Make entire card clickable to expand/collapse
+            if st.button(
+                f"toggle_display_{section_key}_{cat}",
+                key=f"toggle_{section_key}_{cat}",
+                use_container_width=True,
+                help="Click to expand/collapse"
+            ):
                 st.session_state[minimize_key] = not st.session_state[minimize_key]
                 st.rerun()
-        
-        with col2:
-            progress_pct = (spent_so_far / budget * 100) if budget > 0 else 0
-            # Add some spacing to align with buttons
-            st.markdown(f"<div style='padding-top: 4px;'><b>{cat}</b> · ₹{int(spent_so_far):,} / ₹{int(budget):,} ({progress_pct:.0f}%)</div>", unsafe_allow_html=True)
-        
-        with col3:
-            st.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete", use_container_width=True)
-            if st.session_state.get(f"del_{section_key}_{cat}"):
+            
+        with col_del:
+            if st.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete", use_container_width=True):
                 delete_category(section_key, cat)
                 st.rerun()
+        
+        # Show the summary card
+        icon_indicator = "▼" if not st.session_state[minimize_key] else "▶"
+        st.markdown(f"""
+            <div style="background-color: #1a1a1a; padding: 12px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #2a2a2a; margin-top: -45px; pointer-events: none;">
+                <div style="font-size: 0.95rem; font-weight: 600; margin-bottom: 10px;">
+                    {icon_indicator} {cat}
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <div style="text-align: center; flex: 1;">
+                        <div style="font-size: 0.65rem; color: #aaa; margin-bottom: 4px; text-transform: uppercase;">LEFT</div>
+                        <div style="font-size: 0.9rem; font-weight: bold; color: {'#4CAF50' if remaining_cat >= 0 else '#FF5252'};">₹{int(remaining_cat):,}</div>
+                    </div>
+                    <div style="text-align: center; flex: 1; border-left: 1px solid #333; border-right: 1px solid #333;">
+                        <div style="font-size: 0.65rem; color: #aaa; margin-bottom: 4px; text-transform: uppercase;">{col3_header.upper()}</div>
+                        <div style="font-size: 0.9rem; font-weight: bold; color: #fff;">₹{int(spent_so_far):,}</div>
+                    </div>
+                    <div style="text-align: center; flex: 1;">
+                        <div style="font-size: 0.65rem; color: #aaa; margin-bottom: 4px; text-transform: uppercase;">{col2_header.upper()}</div>
+                        <div style="font-size: 0.9rem; font-weight: bold; color: #fff;">₹{int(budget):,}</div>
+                    </div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
-        # Expanded view - much cleaner layout
+        # Expanded view - editing options
         if not st.session_state[minimize_key]:
             st.markdown("---")
             
@@ -491,8 +517,8 @@ def render_section(title, section_key, icon):
                     save_data(st.session_state.data)
                     st.rerun()
 
-            # Spent row with max button
-            col_label2, col_input2, col_max = st.columns([2, 3, 1])
+            # Spent row
+            col_label2, col_input2 = st.columns([2, 4])
             
             with col_label2:
                 st.markdown(f"**{col3_header}:**")
@@ -525,16 +551,6 @@ def render_section(title, section_key, icon):
 
             with col_input2:
                 st.number_input(**input_kwargs)
-
-            with col_max:
-                st.button(
-                    "Max", 
-                    key=f"max_{section_key}_{cat}",
-                    help="Set to maximum budget",
-                    on_click=set_max_spent, 
-                    args=(cat, int(budget), spent_key),
-                    use_container_width=True
-                )
 
     # Add Category
     with st.expander(f"➕ Add {title}", expanded=False):
