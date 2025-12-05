@@ -352,11 +352,11 @@ def render_section(title, section_key):
 
     st.header(display_title)
     
-    # Headers
-    h1, h2, h3 = st.columns([2, 1.5, 2])
-    h1.markdown("**Category**")
-    h2.markdown(f"**{col2_header}**")
-    h3.markdown(f"**{col3_header}**")
+    # Headers - Removed for mobile-friendly card layout
+    # h1, h2, h3 = st.columns([2, 1.5, 2])
+    # h1.markdown("**Category**")
+    # h2.markdown(f"**{col2_header}**")
+    # h3.markdown(f"**{col3_header}**")
     
     categories = list(st.session_state.data[section_key].keys())
     
@@ -367,67 +367,73 @@ def render_section(title, section_key):
         budget = st.session_state.data[section_key][cat]
         spent_so_far = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
         
-        c1, c_del, c2, c3 = st.columns([2, 0.5, 1.5, 2])
-        
-        # Col 1: Name
-        c1.write(f"**{cat}**")
-        
-        # Col Del: Delete Button
-        if c_del.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete Category"):
-            delete_category(section_key, cat)
-            st.rerun()
-        
-        # Col 2: Budget / Total Debt
-        new_budget = c2.number_input(
-            col2_header, value=int(budget), min_value=0, step=50, key=f"bud_{section_key}_{cat}", label_visibility="collapsed", format="%d"
-        )
-        if new_budget != budget:
-            st.session_state.data[section_key][cat] = new_budget
-            save_data(st.session_state.data)
-            st.rerun()
+        with st.container(border=True):
+            # Header Row: Name | Max Button | Delete Button
+            c_name, c_max, c_del = st.columns([6, 1, 1])
+            c_name.markdown(f"**{cat}**")
             
-        # Col 3: Spent / Paid + Max
-        sc1, sc2 = c3.columns([3, 1])
-        spent_key = f"spent_{section_key}_{cat}"
-        
-        # Ensure key exists in session state for correct updates
-        if spent_key not in st.session_state:
-            st.session_state[spent_key] = int(spent_so_far)
+            # Max Button (Set Spent to Budget)
+            # We need the spent_key defined before the button callback
+            spent_key = f"spent_{section_key}_{cat}"
             
-        # Determine max_value for input (only for debts)
-        input_max = None
-        if section_key == "debts":
-            input_max = int(budget)
-            # Ensure current value doesn't exceed max (visual clamp)
-            if st.session_state[spent_key] > input_max:
-                st.session_state[spent_key] = input_max
-        
-        # Use key only, no value argument to avoid conflicts
-        # Construct kwargs to avoid passing 'value' if key exists
-        input_kwargs = {
-            "label": col3_header,
-            "step": 10,
-            "min_value": 0,
-            "max_value": input_max,
-            "key": spent_key,
-            "label_visibility": "collapsed",
-            "format": "%d",
-            "on_change": update_spent_callback,
-            "args": (cat, spent_key)
-        }
-        
-        if spent_key not in st.session_state:
-            # Only set value if key doesn't exist (though we set it above, so this might be redundant but safe)
-            input_kwargs["value"] = int(spent_so_far)
+            # Ensure key exists
+            if spent_key not in st.session_state:
+                st.session_state[spent_key] = int(spent_so_far)
             
-        sc1.number_input(**input_kwargs)
-        sc2.button(
-            "📍", 
-            key=f"max_{section_key}_{cat}", 
-            help=f"Set {col3_header} to {col2_header}", 
-            on_click=set_max_spent, 
-            args=(cat, int(new_budget), spent_key)
-        )
+            c_max.button(
+                "📍", 
+                key=f"max_{section_key}_{cat}", 
+                help=f"Set {col3_header} to {col2_header}", 
+                on_click=set_max_spent, 
+                args=(cat, int(budget), spent_key)
+            )
+            
+            # Delete Button
+            if c_del.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete Category"):
+                delete_category(section_key, cat)
+                st.rerun()
+            
+            # Input Row: Budget | Spent
+            c_bud, c_spent = st.columns(2)
+            
+            # Budget Input
+            new_budget = c_bud.number_input(
+                col2_header, 
+                value=int(budget), 
+                min_value=0, 
+                step=50, 
+                key=f"bud_{section_key}_{cat}", 
+                format="%d"
+            )
+            if new_budget != budget:
+                st.session_state.data[section_key][cat] = new_budget
+                save_data(st.session_state.data)
+                st.rerun()
+                
+            # Spent Input
+            # Determine max_value for input (only for debts)
+            input_max = None
+            if section_key == "debts":
+                input_max = int(budget)
+                # Ensure current value doesn't exceed max (visual clamp)
+                if st.session_state[spent_key] > input_max:
+                    st.session_state[spent_key] = input_max
+            
+            input_kwargs = {
+                "label": col3_header,
+                "step": 10,
+                "min_value": 0,
+                "max_value": input_max,
+                "key": spent_key,
+                "format": "%d",
+                "on_change": update_spent_callback,
+                "args": (cat, spent_key)
+            }
+            
+            if spent_key not in st.session_state:
+                input_kwargs["value"] = int(spent_so_far)
+                
+            c_spent.number_input(**input_kwargs)
 
     # Add Category to Section
     with st.expander(f"➕ Add to {title}"):
