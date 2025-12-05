@@ -287,6 +287,17 @@ st.markdown("""
     .stButton > button {
         padding: 4px 8px;
         font-size: 0.9rem;
+        min-height: 32px;
+        height: 32px;
+    }
+    
+    /* Remove extra spacing from button containers */
+    .stButton {
+        margin: 0;
+    }
+    
+    div[data-testid="column"] {
+        padding: 0 !important;
     }
     
     /* Reduce spacing between elements */
@@ -437,20 +448,23 @@ def render_section(title, section_key, icon):
             st.session_state[minimize_key] = True  # Default to minimized
 
         # Compact card with toggle - cleaner layout
-        col1, col2, col3 = st.columns([0.5, 5.5, 0.5])
+        col1, col2, col3 = st.columns([0.4, 5.8, 0.4])
         
         with col1:
             icon = "▶" if st.session_state[minimize_key] else "▼"
-            if st.button(icon, key=f"toggle_{section_key}_{cat}", help="Expand/Collapse", use_container_width=True):
+            st.button(icon, key=f"toggle_{section_key}_{cat}", help="Expand", use_container_width=True)
+            if st.session_state.get(f"toggle_{section_key}_{cat}"):
                 st.session_state[minimize_key] = not st.session_state[minimize_key]
                 st.rerun()
         
         with col2:
             progress_pct = (spent_so_far / budget * 100) if budget > 0 else 0
-            st.markdown(f"**{cat}** · ₹{int(spent_so_far):,} / ₹{int(budget):,} ({progress_pct:.0f}%)")
+            # Add some spacing to align with buttons
+            st.markdown(f"<div style='padding-top: 4px;'><b>{cat}</b> · ₹{int(spent_so_far):,} / ₹{int(budget):,} ({progress_pct:.0f}%)</div>", unsafe_allow_html=True)
         
         with col3:
-            if st.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete", use_container_width=True):
+            st.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete", use_container_width=True)
+            if st.session_state.get(f"del_{section_key}_{cat}"):
                 delete_category(section_key, cat)
                 st.rerun()
 
