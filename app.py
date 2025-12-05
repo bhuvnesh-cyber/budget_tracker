@@ -320,51 +320,185 @@ st.markdown("""
 
 # --- UI ---
 current_month_name = datetime.datetime.now().strftime("%B %Y")
-st.title(f"💰 {current_month_name}")
+st.markdown(f"<h2 style='text-align: center; margin-bottom: 20px;'>💰 {current_month_name}</h2>", unsafe_allow_html=True)
 
-# --- Top Section: Total Summary ---
+# --- Top Section: Total Summary & Weekly Spends ---
 total_earnings, total_spent, remaining = calculate_totals()
 total_budget_all = sum(sum(st.session_state.data[k].values()) for k in ["needs", "wants", "savings", "debts"])
+
+# Mobile-optimized CSS
+st.markdown("""
+    <style>
+    /* Global Styles */
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 3rem;
+        max-width: 600px; /* Mobile width constraint */
+    }
+    
+    h1, h2, h3 {
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+    }
+    
+    /* Summary Cards */
+    .summary-card {
+        background-color: #1E1E1E;
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        border: 1px solid #333;
+        margin-bottom: 20px;
+    }
+    
+    .summary-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px;
+        text-align: center;
+    }
+    
+    .summary-item {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .summary-label {
+        font-size: 0.7rem;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 4px;
+    }
+    
+    .summary-value {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #fff;
+    }
+    
+    .positive { color: #4CAF50; }
+    .negative { color: #FF5252; }
+    
+    /* Section Headers */
+    .section-header {
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .section-badge {
+        font-size: 0.8rem;
+        background-color: #333;
+        padding: 2px 8px;
+        border-radius: 12px;
+        color: #ccc;
+    }
+
+    /* Category Cards */
+    .stExpander {
+        background-color: transparent !important;
+        border: none !important;
+    }
+    
+    .stExpander > details {
+        background-color: #1E1E1E;
+        border-radius: 12px;
+        border: 1px solid #333;
+        margin-bottom: 10px;
+        overflow: hidden;
+    }
+    
+    .stExpander > details > summary {
+        padding: 12px 16px !important;
+        background-color: #1E1E1E !important;
+        border-bottom: 1px solid #2a2a2a;
+        font-weight: 500;
+        font-size: 1rem;
+    }
+    
+    .stExpander > details > div {
+        padding: 16px !important;
+    }
+    
+    /* Inputs */
+    .stNumberInput input {
+        background-color: #2a2a2a !important;
+        border: 1px solid #444 !important;
+        border-radius: 8px !important;
+        color: white !important;
+    }
+    
+    /* Buttons */
+    .stButton button {
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Progress Bar */
+    .progress-bg {
+        background-color: #333;
+        height: 6px;
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: 8px;
+    }
+    
+    .progress-fill {
+        height: 100%;
+        background-color: #4CAF50;
+    }
+    
+    .progress-fill.warning { background-color: #FFC107; }
+    .progress-fill.danger { background-color: #FF5252; }
+    
+    </style>
+""", unsafe_allow_html=True)
 
 remaining_color = "positive" if remaining >= 0 else "negative"
 
 st.markdown(f"""
-    <div class="summary-container">
-        <div class="summary-item">
-            <span class="summary-label">Remaining</span>
-            <span class="summary-value {remaining_color}">₹{int(remaining):,}</span>
-        </div>
-        <div class="summary-item" style="border-left: 1px solid #333; border-right: 1px solid #333;">
-            <span class="summary-label">Spent</span>
-            <span class="summary-value">₹{int(total_spent):,}</span>
-        </div>
-        <div class="summary-item">
-            <span class="summary-label">Budget</span>
-            <span class="summary-value">₹{int(total_budget_all):,}</span>
+    <div class="summary-card">
+        <div class="summary-grid">
+            <div class="summary-item">
+                <span class="summary-label">Remaining</span>
+                <span class="summary-value {remaining_color}">₹{int(remaining):,}</span>
+            </div>
+            <div class="summary-item" style="border-left: 1px solid #333; border-right: 1px solid #333;">
+                <span class="summary-label">Spent</span>
+                <span class="summary-value">₹{int(total_spent):,}</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Budget</span>
+                <span class="summary-value">₹{int(total_budget_all):,}</span>
+            </div>
         </div>
     </div>
 """, unsafe_allow_html=True)
 
-# Weekly Spends - Collapsible
-with st.expander("📅 Weekly Breakdown", expanded=False):
+# Weekly Spends
+with st.expander("📅 Weekly Overview", expanded=False):
     now = datetime.datetime.now()
     weeks = get_weeks_in_month(now.year, now.month)
-
+    
     current_week_idx = -1
     for i, (start, end) in enumerate(weeks):
         if start <= now.date() <= end:
             current_week_idx = i
             break
-
+            
     if current_week_idx == -1:
         weeks_remaining = 0 if now.day > 15 else len(weeks)
     else:
         weeks_remaining = len(weeks) - current_week_idx
-
+        
     dynamic_weekly_budget = remaining / weeks_remaining if weeks_remaining > 0 else 0
-
     wants_categories = list(st.session_state.data["wants"].keys())
-
+    
     weekly_data = []
     for i, (start, end) in enumerate(weeks):
         week_num = i + 1
@@ -374,33 +508,37 @@ with st.expander("📅 Weekly Breakdown", expanded=False):
             and x["Category"] in wants_categories
         ]
         week_spent = sum(x["Amount"] for x in week_expenses)
-
+        
         is_past = end < now.date()
         is_current = start <= now.date() <= end
-
+        
         status_icon = "🔒" if is_past else ("👉" if is_current else "📅")
         display_budget = "-" if is_past else f"₹{int(dynamic_weekly_budget):,}"
-
+        
         weekly_data.append({
-            "": status_icon,
+            "Status": status_icon,
             "Week": f"W{week_num}",
             "Dates": f"{start.strftime('%d')}-{end.strftime('%d')}",
             "Budget": display_budget,
             "Spent": f"₹{int(week_spent):,}"
         })
-
+        
     st.dataframe(
         pd.DataFrame(weekly_data),
         use_container_width=True,
         hide_index=True,
-        height=200
+        column_config={
+            "Status": st.column_config.TextColumn("", width="small"),
+            "Week": st.column_config.TextColumn("Week", width="small"),
+            "Dates": st.column_config.TextColumn("Dates", width="medium"),
+            "Budget": st.column_config.TextColumn("Budget", width="small"),
+            "Spent": st.column_config.TextColumn("Spent", width="small"),
+        }
     )
 
-# Chart - Collapsible
-with st.expander("📊 Spending Chart", expanded=False):
+# Chart
+with st.expander("📊 Analytics", expanded=False):
     render_summary_plot()
-
-st.divider()
 
 # Monthly Income
 with st.expander("💵 Monthly Income", expanded=False):
@@ -416,90 +554,68 @@ with st.expander("💵 Monthly Income", expanded=False):
         save_data(st.session_state.data)
         st.rerun()
 
+st.markdown("---")
+
 # --- Reusable Section Renderer ---
-def render_section(title, section_key, icon):
+def render_section(title, section_key):
     section_total = sum(st.session_state.data[section_key].values())
     earnings = st.session_state.data["earnings"]
-
+    
     if section_key == "debts":
-        display_title = f"{icon} {title}"
-        col2_header = "Debt"
+        col2_header = "Total Debt"
         col3_header = "Paid"
+        display_pct = ""
     else:
         percentage = (section_total / earnings * 100) if earnings > 0 else 0
-        display_title = f"{icon} {title} ({percentage:.0f}%)"
         col2_header = "Budget"
         col3_header = "Spent"
+        display_pct = f"{percentage:.1f}%"
 
-    st.subheader(display_title)
-
+    # Custom Header
+    st.markdown(f"""
+        <div class="section-header">
+            <span>{title}</span>
+            <span class="section-badge">{display_pct}</span>
+        </div>
+    """, unsafe_allow_html=True)
+    
     categories = list(st.session_state.data[section_key].keys())
-
+    
     if not categories:
-        st.caption(f"No {title.lower()} yet. Add one below ⬇️")
+        st.info(f"No categories in {title}. Add one below.")
 
     for cat in categories:
         budget = st.session_state.data[section_key][cat]
         spent_so_far = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
-
-        # Minimized state tracking
-        minimize_key = f"minimize_{section_key}_{cat}"
-        if minimize_key not in st.session_state:
-            st.session_state[minimize_key] = True  # Default to minimized
-
-        # Category card - Budget | Spent | Delete
-        remaining_cat = budget - spent_so_far
         
-        # Clickable card area and delete button
-        col_card, col_del = st.columns([9, 1])
+        # Progress Bar Logic
+        pct = (spent_so_far / budget * 100) if budget > 0 else 0
+        progress_class = "progress-fill"
+        if pct > 100:
+            progress_class += " danger"
+        elif pct > 85:
+            progress_class += " warning"
         
-        with col_card:
-            # Make card clickable to expand/collapse
-            if st.button(
-                f"card_area_{section_key}_{cat}",
-                key=f"toggle_{section_key}_{cat}",
-                use_container_width=True,
-                help="Click to expand/collapse"
-            ):
-                st.session_state[minimize_key] = not st.session_state[minimize_key]
-                st.rerun()
-            
-        with col_del:
-            if st.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete", use_container_width=True):
-                delete_category(section_key, cat)
-                st.rerun()
+        # Card Header Content (Visible when collapsed)
+        header_text = f"{cat}"
         
-        # Show the summary card
-        icon_indicator = "▼" if not st.session_state[minimize_key] else "▶"
-        st.markdown(f"""
-            <div style="background-color: #1a1a1a; padding: 12px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #2a2a2a; margin-top: -45px;">
-                <div style="font-size: 0.95rem; font-weight: 600; margin-bottom: 10px;">
-                    {icon_indicator} {cat}
+        with st.expander(header_text, expanded=False):
+            # Progress Bar inside expander
+            st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px; color:#aaa;">
+                    <span>₹{int(spent_so_far):,} / ₹{int(budget):,}</span>
+                    <span>{int(pct)}%</span>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div style="text-align: center; flex: 1;">
-                        <div style="font-size: 0.65rem; color: #aaa; margin-bottom: 4px; text-transform: uppercase;">{col2_header.upper()}</div>
-                        <div style="font-size: 0.9rem; font-weight: bold; color: #fff;">₹{int(budget):,}</div>
-                    </div>
-                    <div style="text-align: center; flex: 1; border-left: 1px solid #333;">
-                        <div style="font-size: 0.65rem; color: #aaa; margin-bottom: 4px; text-transform: uppercase;">{col3_header.upper()}</div>
-                        <div style="font-size: 0.9rem; font-weight: bold; color: #fff;">₹{int(spent_so_far):,}</div>
-                    </div>
-                    <div style="text-align: center; width: 40px;">
-                    </div>
+                <div class="progress-bg">
+                    <div class="{progress_class}" style="width: {min(pct, 100)}%;"></div>
                 </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # Expanded view - editing options
-        if not st.session_state[minimize_key]:
-            st.markdown("---")
+                <div style="margin-bottom: 16px;"></div>
+            """, unsafe_allow_html=True)
             
-            # Budget row
-            col_label1, col_input1 = st.columns([2, 4])
-            with col_label1:
-                st.markdown(f"**{col2_header}:**")
-            with col_input1:
+            col_bud, col_spent = st.columns(2)
+            
+            with col_bud:
+                st.caption(col2_header.upper())
                 new_budget = st.number_input(
                     col2_header, 
                     value=int(budget), 
@@ -513,58 +629,67 @@ def render_section(title, section_key, icon):
                     st.session_state.data[section_key][cat] = new_budget
                     save_data(st.session_state.data)
                     st.rerun()
-
-            # Spent row
-            col_label2, col_input2 = st.columns([2, 4])
             
-            with col_label2:
-                st.markdown(f"**{col3_header}:**")
+            with col_spent:
+                st.caption(col3_header.upper())
+                
+                col_input, col_max = st.columns([4, 1])
+                
+                spent_key = f"spent_{section_key}_{cat}"
+                if spent_key not in st.session_state:
+                    st.session_state[spent_key] = int(spent_so_far)
+
+                input_max = None
+                if section_key == "debts":
+                    input_max = int(budget)
+                    if st.session_state[spent_key] > input_max:
+                        st.session_state[spent_key] = input_max
+                
+                input_kwargs = {
+                    "label": col3_header,
+                    "step": 10,
+                    "min_value": 0,
+                    "max_value": input_max,
+                    "key": spent_key,
+                    "format": "%d",
+                    "on_change": update_spent_callback,
+                    "args": (cat, spent_key),
+                    "label_visibility": "collapsed"
+                }
+                
+                if spent_key not in st.session_state:
+                    input_kwargs["value"] = int(spent_so_far)
+                
+                with col_input:
+                    st.number_input(**input_kwargs)
+                
+                with col_max:
+                    st.button(
+                        "📍", 
+                        key=f"max_{section_key}_{cat}",
+                        help="Max",
+                        on_click=set_max_spent, 
+                        args=(cat, int(budget), spent_key)
+                    )
             
-            spent_key = f"spent_{section_key}_{cat}"
-
-            if spent_key not in st.session_state:
-                st.session_state[spent_key] = int(spent_so_far)
-
-            input_max = None
-            if section_key == "debts":
-                input_max = int(budget)
-                if st.session_state[spent_key] > input_max:
-                    st.session_state[spent_key] = input_max
-
-            input_kwargs = {
-                "label": col3_header,
-                "step": 10,
-                "min_value": 0,
-                "max_value": input_max,
-                "key": spent_key,
-                "format": "%d",
-                "on_change": update_spent_callback,
-                "args": (cat, spent_key),
-                "label_visibility": "collapsed"
-            }
-
-            if spent_key not in st.session_state:
-                input_kwargs["value"] = int(spent_so_far)
-
-            with col_input2:
-                st.number_input(**input_kwargs)
+            st.markdown("---")
+            if st.button("Delete Category", key=f"del_{section_key}_{cat}", type="primary", use_container_width=True):
+                delete_category(section_key, cat)
+                st.rerun()
 
     # Add Category
-    with st.expander(f"➕ Add {title}", expanded=False):
-        with st.form(f"add_{section_key}", clear_on_submit=True):
+    with st.expander(f"➕ Add {title}"):
+        with st.form(f"add_{section_key}"):
             new_name = st.text_input("Category Name")
             new_bud = st.number_input(col2_header, min_value=0, step=50, value=0)
-            if st.form_submit_button("Add"):
+            if st.form_submit_button("Add Category", use_container_width=True):
                 if add_category(section_key, new_name, new_bud):
                     st.rerun()
                 else:
                     st.error("Category already exists or invalid name")
 
 # Render Sections
-render_section("Needs", "needs", "🏠")
-st.divider()
-render_section("Wants", "wants", "🎯")
-st.divider()
-render_section("Savings", "savings", "💎")
-st.divider()
-render_section("Debts", "debts", "💳")
+render_section("Needs", "needs")
+render_section("Wants", "wants")
+render_section("Savings", "savings")
+render_section("Debts", "debts")
