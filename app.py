@@ -82,21 +82,24 @@ def calculate_totals():
     # Filter expenses to only include active categories
     valid_expenses = [x for x in expenses if x["Category"] in active_cats]
     
-    spent_debt = sum(x["Amount"] for x in valid_expenses if x["Category"] in debt_cats)
     spent_non_debt = sum(x["Amount"] for x in valid_expenses if x["Category"] not in debt_cats)
     
-    total_debt_budget = sum(st.session_state.data["debts"].values())
+    # Calculate Debt Deduction (Liability) per category
+    # Liability = max(Budget, Spent) for EACH debt category
+    # This ensures we reserve the budget for unpaid debts, but account for overspending on paid debts.
+    debt_deduction = 0
+    debt_spent_total = 0
     
-    # Logic:
-    # Remaining = Earnings - Non_Debt_Spent - Liability
-    # Liability = max(Debt Budget, Debt Paid)
-    # This ensures we reserve the budget amount, but if we pay more, we deduct the actual.
-    debt_deduction = max(spent_debt, total_debt_budget)
-    
+    for debt_cat, budget in st.session_state.data["debts"].items():
+        # Calculate spent for this specific debt category
+        cat_spent = sum(x["Amount"] for x in valid_expenses if x["Category"] == debt_cat)
+        debt_spent_total += cat_spent
+        debt_deduction += max(cat_spent, budget)
+        
     remaining = total_earnings - spent_non_debt - debt_deduction
     
-    # Total Spent should reflect ALL spending (including debt payments) so the user sees activity
-    total_spent = spent_non_debt + spent_debt
+    # Total Spent should reflect ALL spending (including debt payments)
+    total_spent = spent_non_debt + debt_spent_total
     
     return total_earnings, total_spent, remaining
 
