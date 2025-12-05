@@ -21,30 +21,30 @@ def load_data():
         "expenses": [],
         "last_month": datetime.datetime.now().month
     }
-    
+
     if not os.path.exists(DATA_FILE):
         return default_data
-        
+
     try:
         with open(DATA_FILE, "r") as f:
             data = json.load(f)
-            
+
             # Migration for old structure
             if "budgets" in data:
                 data["needs"] = data.get("budgets", {})
                 del data["budgets"]
-            
+
             # Ensure all keys exist
             for key in default_data:
                 if key not in data:
                     data[key] = default_data[key]
-            
+
             # Check for Month Reset
             current_month = datetime.datetime.now().month
             if data["last_month"] != current_month:
                 data["expenses"] = []
                 data["last_month"] = current_month
-                
+
             return data
     except json.JSONDecodeError:
         return default_data
@@ -65,47 +65,46 @@ def get_current_month_dates():
 
 def calculate_totals():
     total_earnings = st.session_state.data["earnings"]
-    
+
     # Get all active categories to filter out orphaned expenses
     active_cats = set()
     for section in ["needs", "wants", "savings", "debts"]:
         active_cats.update(st.session_state.data[section].keys())
-    
+
     # Get debt categories
     debt_cats = list(st.session_state.data["debts"].keys())
     expenses = st.session_state.data["expenses"]
-    
+
     # Filter expenses to only include active categories
     valid_expenses = [x for x in expenses if x["Category"] in active_cats]
-    
+
     # Calculate spending in non-debt categories
     spent_non_debt = sum(x["Amount"] for x in valid_expenses if x["Category"] not in debt_cats)
-    
+
     # Calculate debt spending (actual payments made)
     debt_spent_total = sum(x["Amount"] for x in valid_expenses if x["Category"] in debt_cats)
-    
+
     # For debt calculation:
     # Deduction should be the budgeted debt amounts (total liability)
-    # regardless of whether they're paid or not
     debt_budget_total = sum(st.session_state.data["debts"].values())
-    
+
     # Remaining = Earnings - Non-debt spending - Total debt budget
     remaining = total_earnings - spent_non_debt - debt_budget_total
-    
+
     # Total Spent includes both non-debt spending AND debt payments
     total_spent = spent_non_debt + debt_spent_total
-    
+
     return total_earnings, total_spent, remaining
 
 def update_spent_callback(cat, key):
     new_total = st.session_state.get(key)
     if new_total is None:
         return
-        
+
     # Calculate current total for this category
     current_total = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
     diff = new_total - current_total
-    
+
     if diff != 0:
         new_expense = {
             "Category": cat,
@@ -131,9 +130,13 @@ def set_max_spent(cat, budget, input_key):
         st.session_state[input_key] = int(budget)
 
 def add_category(section, name, budget):
-    if name:
-        st.session_state.data[section][name] = budget
-        save_data(st.session_state.data)
+    if name and name.strip():
+        name = name.strip()
+        if name not in st.session_state.data[section]:
+            st.session_state.data[section][name] = budget
+            save_data(st.session_state.data)
+            return True
+    return False
 
 def delete_category(section, name):
     if name in st.session_state.data[section]:
@@ -163,18 +166,24 @@ def get_weeks_in_month(year, month):
 def render_summary_plot():
     summary_data = []
     total_earnings = st.session_state.data["earnings"]
-    
+
     for section in ["needs", "wants", "savings"]:
         budget = sum(st.session_state.data[section].values())
         section_cats = st.session_state.data[section].keys()
         spent = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] in section_cats)
         pct_spent = (spent / total_earnings * 100) if total_earnings > 0 else 0
-        
-        summary_data.append({"Category": section.capitalize(), "Type": "Spent %", "Percentage": pct_spent, "Amount": spent, "Budget": budget})
-    
+
+        summary_data.append({
+            "Category": section.capitalize(), 
+            "Type": "Spent %", 
+            "Percentage": pct_spent, 
+            "Amount": spent, 
+            "Budget": budget
+        })
+
     df_plot = pd.DataFrame(summary_data)
-    
-    if not df_plot.empty:
+
+    if not df_plot.empty and total_earnings > 0:
         base = alt.Chart(df_plot).encode(
             x=alt.X('Category', axis=alt.Axis(labelAngle=0)),
             y=alt.Y('Percentage', axis=alt.Axis(title='% of Income')),
@@ -182,7 +191,7 @@ def render_summary_plot():
         )
 
         bars = base.mark_bar()
-        
+
         text = base.mark_text(
             align='center',
             baseline='bottom',
@@ -195,30 +204,27 @@ def render_summary_plot():
             title="Spending as % of Income",
             height=200
         )
-        
+
         st.altair_chart(chart, use_container_width=True)
 
-# --- UI ---
-current_month_name = datetime.datetime.now().strftime("%B %Y")
-st.title(f"💰 Budget Tracker - {current_month_name}")
-
-# --- Top Section: Total Summary & Weekly Spends ---
-total_earnings, total_spent, remaining = calculate_totals()
-total_budget_all = sum(sum(st.session_state.data[k].values()) for k in ["needs", "wants", "savings", "debts"])
-
-st.subheader("Total Summary")
-
-# Mobile-optimized CSS
+# --- Mobile-optimized CSS ---
 st.markdown("""
     <style>
+    /* Reduce overall padding */
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    
+    /* Summary cards */
     .summary-container {
         display: flex;
         flex-direction: row;
         justify-content: space-between;
         background-color: #1E1E1E;
-        padding: 12px 8px;
-        border-radius: 10px;
-        margin-bottom: 20px;
+        padding: 10px 6px;
+        border-radius: 8px;
+        margin-bottom: 16px;
         border: 1px solid #333;
     }
     .summary-item {
@@ -229,9 +235,11 @@ st.markdown("""
         flex: 1;
     }
     .summary-label {
-        font-size: 0.7rem;
+        font-size: 0.65rem;
         color: #aaa;
-        margin-bottom: 4px;
+        margin-bottom: 2px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
     .summary-value {
         font-size: 0.95rem;
@@ -241,18 +249,71 @@ st.markdown("""
     .summary-value.positive { color: #4CAF50; }
     .summary-value.negative { color: #FF5252; }
     
-    /* Make number inputs more mobile-friendly */
-    .stNumberInput > div > div > input {
-        font-size: 16px !important;
-        padding: 8px !important;
+    /* Compact category cards */
+    .cat-card {
+        background-color: #1a1a1a;
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 8px;
+        border: 1px solid #2a2a2a;
     }
     
-    /* Reduce container padding on mobile */
-    [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
-        gap: 0.5rem;
+    .cat-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+    
+    .cat-name {
+        font-size: 1rem;
+        font-weight: 600;
+        flex: 1;
+    }
+    
+    .cat-summary {
+        font-size: 0.75rem;
+        color: #888;
+        margin-bottom: 8px;
+    }
+    
+    /* Make inputs mobile-friendly */
+    .stNumberInput > div > div > input {
+        font-size: 16px !important;
+        padding: 6px 8px !important;
+    }
+    
+    /* Compact buttons */
+    .stButton > button {
+        padding: 4px 8px;
+        font-size: 0.9rem;
+    }
+    
+    /* Reduce spacing between elements */
+    .element-container {
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Compact expanders */
+    .streamlit-expanderHeader {
+        font-size: 0.9rem;
+        padding: 8px 12px;
+    }
+    
+    /* Compact dividers */
+    hr {
+        margin: 1rem 0;
     }
     </style>
 """, unsafe_allow_html=True)
+
+# --- UI ---
+current_month_name = datetime.datetime.now().strftime("%B %Y")
+st.title(f"💰 {current_month_name}")
+
+# --- Top Section: Total Summary ---
+total_earnings, total_spent, remaining = calculate_totals()
+total_budget_all = sum(sum(st.session_state.data[k].values()) for k in ["needs", "wants", "savings", "debts"])
 
 remaining_color = "positive" if remaining >= 0 else "negative"
 
@@ -267,251 +328,210 @@ st.markdown(f"""
             <span class="summary-value">₹{int(total_spent):,}</span>
         </div>
         <div class="summary-item">
-            <span class="summary-label">Budgeted</span>
+            <span class="summary-label">Budget</span>
             <span class="summary-value">₹{int(total_budget_all):,}</span>
         </div>
     </div>
 """, unsafe_allow_html=True)
 
-st.divider()
+# Weekly Spends - Collapsible
+with st.expander("📅 Weekly Breakdown", expanded=False):
+    now = datetime.datetime.now()
+    weeks = get_weeks_in_month(now.year, now.month)
 
-# Weekly Spends
-st.header("Weekly Spends")
-now = datetime.datetime.now()
-weeks = get_weeks_in_month(now.year, now.month)
+    current_week_idx = -1
+    for i, (start, end) in enumerate(weeks):
+        if start <= now.date() <= end:
+            current_week_idx = i
+            break
 
-current_week_idx = -1
-for i, (start, end) in enumerate(weeks):
-    if start <= now.date() <= end:
-        current_week_idx = i
-        break
-
-if current_week_idx == -1:
-    if now.day > 15:
-        weeks_remaining = 0
+    if current_week_idx == -1:
+        weeks_remaining = 0 if now.day > 15 else len(weeks)
     else:
-        weeks_remaining = len(weeks)
-else:
-    weeks_remaining = len(weeks) - current_week_idx
+        weeks_remaining = len(weeks) - current_week_idx
 
-dynamic_weekly_budget = remaining / weeks_remaining if weeks_remaining > 0 else 0
+    dynamic_weekly_budget = remaining / weeks_remaining if weeks_remaining > 0 else 0
 
-wants_categories = list(st.session_state.data["wants"].keys())
+    wants_categories = list(st.session_state.data["wants"].keys())
 
-weekly_data = []
-for i, (start, end) in enumerate(weeks):
-    week_num = i + 1
-    
-    week_expenses = [
-        x for x in st.session_state.data["expenses"] 
-        if start <= datetime.datetime.strptime(x["Date"], "%Y-%m-%d").date() <= end
-        and x["Category"] in wants_categories
-    ]
-    week_spent = sum(x["Amount"] for x in week_expenses)
-    
-    is_past = end < now.date()
-    is_current = start <= now.date() <= end
-    
-    status_icon = "🔒" if is_past else ("👉" if is_current else "📅")
-    
-    if is_past:
-        display_budget = "-" 
-    else:
-        display_budget = f"₹{int(dynamic_weekly_budget):,}"
-        
-    weekly_data.append({
-        "": status_icon,
-        "Week": f"W{week_num}",
-        "Dates": f"{start.strftime('%d')}-{end.strftime('%d %b')}",
-        "Budget": display_budget,
-        "Spent": f"₹{int(week_spent):,}"
-    })
+    weekly_data = []
+    for i, (start, end) in enumerate(weeks):
+        week_num = i + 1
+        week_expenses = [
+            x for x in st.session_state.data["expenses"] 
+            if start <= datetime.datetime.strptime(x["Date"], "%Y-%m-%d").date() <= end
+            and x["Category"] in wants_categories
+        ]
+        week_spent = sum(x["Amount"] for x in week_expenses)
 
-st.dataframe(
-    pd.DataFrame(weekly_data),
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "": st.column_config.TextColumn("", width="small"),
-        "Week": st.column_config.TextColumn("Week", width="small"),
-        "Dates": st.column_config.TextColumn("Dates", width="medium"),
-        "Budget": st.column_config.TextColumn("Budget", width="small"),
-        "Spent": st.column_config.TextColumn("Spent", width="small"),
-    }
-)
+        is_past = end < now.date()
+        is_current = start <= now.date() <= end
+
+        status_icon = "🔒" if is_past else ("👉" if is_current else "📅")
+        display_budget = "-" if is_past else f"₹{int(dynamic_weekly_budget):,}"
+
+        weekly_data.append({
+            "": status_icon,
+            "Week": f"W{week_num}",
+            "Dates": f"{start.strftime('%d')}-{end.strftime('%d')}",
+            "Budget": display_budget,
+            "Spent": f"₹{int(week_spent):,}"
+        })
+
+    st.dataframe(
+        pd.DataFrame(weekly_data),
+        use_container_width=True,
+        hide_index=True,
+        height=200
+    )
+
+# Chart - Collapsible
+with st.expander("📊 Spending Chart", expanded=False):
+    render_summary_plot()
 
 st.divider()
 
-render_summary_plot()
-
-st.divider()
-
-# 1. Earnings
-st.subheader("Monthly Income")
-new_earnings = st.number_input(
-    "Earnings", 
-    value=int(st.session_state.data["earnings"]), 
-    step=100,
-    min_value=0,
-    format="%d",
-    label_visibility="collapsed"
-)
-if new_earnings != st.session_state.data["earnings"]:
-    st.session_state.data["earnings"] = new_earnings
-    save_data(st.session_state.data)
-    st.rerun()
-
-st.divider()
+# Monthly Income
+with st.expander("💵 Monthly Income", expanded=False):
+    new_earnings = st.number_input(
+        "Income Amount", 
+        value=int(st.session_state.data["earnings"]), 
+        step=100,
+        min_value=0,
+        format="%d"
+    )
+    if new_earnings != st.session_state.data["earnings"]:
+        st.session_state.data["earnings"] = new_earnings
+        save_data(st.session_state.data)
+        st.rerun()
 
 # --- Reusable Section Renderer ---
-def render_section(title, section_key):
+def render_section(title, section_key, icon):
     section_total = sum(st.session_state.data[section_key].values())
     earnings = st.session_state.data["earnings"]
-    
+
     if section_key == "debts":
-        display_title = title
-        col2_header = "Total Debt"
+        display_title = f"{icon} {title}"
+        col2_header = "Debt"
         col3_header = "Paid"
     else:
         percentage = (section_total / earnings * 100) if earnings > 0 else 0
-        display_title = f"{title} ({percentage:.1f}%)"
+        display_title = f"{icon} {title} ({percentage:.0f}%)"
         col2_header = "Budget"
         col3_header = "Spent"
 
-    st.header(display_title)
-    
+    st.subheader(display_title)
+
     categories = list(st.session_state.data[section_key].keys())
-    
+
     if not categories:
-        st.info(f"No categories in {title}. Add one below.")
+        st.caption(f"No {title.lower()} yet. Add one below ⬇️")
 
     for cat in categories:
         budget = st.session_state.data[section_key][cat]
         spent_so_far = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
-        
+
         # Minimized state tracking
         minimize_key = f"minimize_{section_key}_{cat}"
         if minimize_key not in st.session_state:
-            st.session_state[minimize_key] = False
+            st.session_state[minimize_key] = True  # Default to minimized
+
+        # Compact card with toggle
+        col1, col2, col3 = st.columns([0.6, 5, 0.6])
         
-        with st.container(border=True):
-            # CSS for compact header with corner delete button
-            st.markdown("""
-                <style>
-                .cat-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    margin-bottom: 8px;
-                }
-                .cat-name {
-                    font-size: 1.1rem;
-                    font-weight: 600;
-                    flex-grow: 1;
-                }
-                </style>
-            """, unsafe_allow_html=True)
-            
-            # Header row: Name, Minimize, Delete (all in one line)
-            col_name, col_min, col_del = st.columns([4, 0.5, 0.5])
-            
-            with col_name:
-                st.markdown(f'<div class="cat-name">{cat}</div>', unsafe_allow_html=True)
-            
-            with col_min:
-                icon = "➖" if not st.session_state[minimize_key] else "➕"
-                if st.button(icon, key=f"min_{section_key}_{cat}", help="Minimize/Expand"):
-                    st.session_state[minimize_key] = not st.session_state[minimize_key]
-                    st.rerun()
-            
-            with col_del:
-                if st.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete"):
-                    delete_category(section_key, cat)
-                    st.rerun()
-            
-            # Only show details if not minimized
-            if not st.session_state[minimize_key]:
-                # Budget and Spent in 2 columns for compact layout
-                col_bud, col_spent = st.columns(2)
-                
-                with col_bud:
-                    st.caption(col2_header)
-                    new_budget = st.number_input(
-                        col2_header, 
-                        value=int(budget), 
-                        min_value=0, 
-                        step=50, 
-                        key=f"bud_{section_key}_{cat}", 
-                        format="%d",
-                        label_visibility="collapsed"
-                    )
-                    if new_budget != budget:
-                        st.session_state.data[section_key][cat] = new_budget
-                        save_data(st.session_state.data)
-                        st.rerun()
-                
-                with col_spent:
-                    st.caption(col3_header)
-                    
-                    # Spent input with max button inline
-                    col_input, col_max = st.columns([4, 1])
-                    
-                    spent_key = f"spent_{section_key}_{cat}"
-                    
-                    if spent_key not in st.session_state:
-                        st.session_state[spent_key] = int(spent_so_far)
-
-                    input_max = None
-                    if section_key == "debts":
-                        input_max = int(budget)
-                        if st.session_state[spent_key] > input_max:
-                            st.session_state[spent_key] = input_max
-                    
-                    input_kwargs = {
-                        "label": col3_header,
-                        "step": 10,
-                        "min_value": 0,
-                        "max_value": input_max,
-                        "key": spent_key,
-                        "format": "%d",
-                        "on_change": update_spent_callback,
-                        "args": (cat, spent_key),
-                        "label_visibility": "collapsed"
-                    }
-                    
-                    if spent_key not in st.session_state:
-                        input_kwargs["value"] = int(spent_so_far)
-                    
-                    with col_input:
-                        st.number_input(**input_kwargs)
-                    
-                    with col_max:
-                        st.button(
-                            "📍", 
-                            key=f"max_{section_key}_{cat}",
-                            help="Max",
-                            on_click=set_max_spent, 
-                            args=(cat, int(budget), spent_key)
-                        )
-            else:
-                # Show compact summary when minimized
-                st.caption(f"{col3_header}: ₹{int(spent_so_far):,} / ₹{int(budget):,}")
-
-    # Add Category
-    with st.expander(f"➕ Add {title}"):
-        with st.form(f"add_{section_key}"):
-            new_name = st.text_input("Category Name")
-            new_bud = st.number_input(col2_header, min_value=0, step=50, value=0)
-            if st.form_submit_button("Add Category"):
-                add_category(section_key, new_name, new_bud)
+        with col1:
+            icon = "▶" if st.session_state[minimize_key] else "▼"
+            if st.button(icon, key=f"toggle_{section_key}_{cat}", help="Expand/Collapse"):
+                st.session_state[minimize_key] = not st.session_state[minimize_key]
+                st.rerun()
+        
+        with col2:
+            progress_pct = (spent_so_far / budget * 100) if budget > 0 else 0
+            st.markdown(f"**{cat}** · ₹{int(spent_so_far):,} / ₹{int(budget):,} ({progress_pct:.0f}%)")
+        
+        with col3:
+            if st.button("🗑️", key=f"del_{section_key}_{cat}", help="Delete"):
+                delete_category(section_key, cat)
                 st.rerun()
 
-# 2. Sections
-render_section("Needs", "needs")
+        # Expanded view
+        if not st.session_state[minimize_key]:
+            col_bud, col_spent = st.columns(2)
+
+            with col_bud:
+                st.caption(col2_header)
+                new_budget = st.number_input(
+                    col2_header, 
+                    value=int(budget), 
+                    min_value=0, 
+                    step=50, 
+                    key=f"bud_{section_key}_{cat}", 
+                    format="%d",
+                    label_visibility="collapsed"
+                )
+                if new_budget != budget:
+                    st.session_state.data[section_key][cat] = new_budget
+                    save_data(st.session_state.data)
+                    st.rerun()
+
+            with col_spent:
+                st.caption(col3_header)
+                col_input, col_max = st.columns([4, 1])
+
+                spent_key = f"spent_{section_key}_{cat}"
+
+                if spent_key not in st.session_state:
+                    st.session_state[spent_key] = int(spent_so_far)
+
+                input_max = None
+                if section_key == "debts":
+                    input_max = int(budget)
+                    if st.session_state[spent_key] > input_max:
+                        st.session_state[spent_key] = input_max
+
+                input_kwargs = {
+                    "label": col3_header,
+                    "step": 10,
+                    "min_value": 0,
+                    "max_value": input_max,
+                    "key": spent_key,
+                    "format": "%d",
+                    "on_change": update_spent_callback,
+                    "args": (cat, spent_key),
+                    "label_visibility": "collapsed"
+                }
+
+                if spent_key not in st.session_state:
+                    input_kwargs["value"] = int(spent_so_far)
+
+                with col_input:
+                    st.number_input(**input_kwargs)
+
+                with col_max:
+                    st.button(
+                        "📍", 
+                        key=f"max_{section_key}_{cat}",
+                        help="Set to max",
+                        on_click=set_max_spent, 
+                        args=(cat, int(budget), spent_key)
+                    )
+
+    # Add Category
+    with st.expander(f"➕ Add {title}", expanded=False):
+        with st.form(f"add_{section_key}", clear_on_submit=True):
+            new_name = st.text_input("Category Name")
+            new_bud = st.number_input(col2_header, min_value=0, step=50, value=0)
+            if st.form_submit_button("Add"):
+                if add_category(section_key, new_name, new_bud):
+                    st.rerun()
+                else:
+                    st.error("Category already exists or invalid name")
+
+# Render Sections
+render_section("Needs", "needs", "🏠")
 st.divider()
-render_section("Wants", "wants")
+render_section("Wants", "wants", "🎯")
 st.divider()
-render_section("Savings", "savings")
+render_section("Savings", "savings", "💎")
 st.divider()
-render_section("Debts", "debts")
-st.divider()
+render_section("Debts", "debts", "💳")
