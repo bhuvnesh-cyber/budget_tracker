@@ -311,6 +311,26 @@ st.markdown(
     }
     .stCaption,[data-testid="stCaptionContainer"]{color:#c4b5fd !important;}
     hr { margin:0.8rem 0; }
+
+    /* small glowing chip for MAX */
+    .max-chip {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        border: 1px solid rgba(168,85,247,0.7);
+        background: radial-gradient(circle at 30% 0%, #f97373 0%, #7c3aed 45%, #1e1b4b 100%);
+        color: #f9fafb;
+        font-size: 0.9rem;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        box-shadow: 0 0 10px rgba(168,85,247,0.6);
+        cursor: pointer;
+    }
+    .max-chip:hover {
+        transform: translateY(-1px) scale(1.03);
+        box-shadow: 0 0 14px rgba(244,114,182,0.8);
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -574,7 +594,9 @@ def render_section(title, section_key):
 
             with col_spent:
                 st.caption(col3_header.upper())
-                col_input, col_max = st.columns([4, 1])
+
+                col_input, col_max = st.columns([5, 1])
+
                 spent_key = f"spent_{section_key}_{cat}"
                 if spent_key not in st.session_state:
                     st.session_state[spent_key] = int(spent_so_far)
@@ -597,11 +619,20 @@ def render_section(title, section_key):
                         args=(cat, spent_key),
                         label_visibility="collapsed",
                     )
+
                 with col_max:
+                    st.markdown(
+                        """
+                        <div style="display:flex;justify-content:center;align-items:center;margin-top:6px;">
+                            <div class="max-chip">⚡</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
                     st.button(
-                        "📍",
+                        "",
                         key=f"max_{section_key}_{cat}",
-                        help="Max",
+                        help="Set spent equal to budget",
                         on_click=set_max_spent,
                         args=(cat, int(budget), spent_key),
                     )
