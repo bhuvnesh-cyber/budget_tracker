@@ -414,6 +414,45 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+    <style>
+    /* Dataframe styling to match purple theme */
+    .stDataFrame [data-testid="stTable"] {
+        background: radial-gradient(circle at top left, #261347 0%, #140a29 45%, #0b0718 100%);
+        color: #e5e7eb;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(168, 85, 247, 0.35);
+    }
+
+    .stDataFrame [data-testid="stTable"] th {
+        background: rgba(55, 25, 109, 0.95) !important;
+        color: #e9d5ff !important;
+        font-weight: 600 !important;
+        font-size: 0.76rem !important;
+        border-bottom: 1px solid rgba(129, 140, 248, 0.5) !important;
+    }
+
+    .stDataFrame [data-testid="stTable"] td {
+        background: transparent !important;
+        font-size: 0.78rem !important;
+        border-bottom: 1px solid rgba(55, 65, 81, 0.55) !important;
+    }
+
+    .stDataFrame [data-testid="stTable"] tbody tr:nth-child(even) td {
+        background: rgba(17, 24, 39, 0.65) !important;
+    }
+
+    .stDataFrame [data-testid="stTable"] tbody tr:hover td {
+        background: rgba(124, 58, 237, 0.25) !important;
+    }
+
+    .stDataFrame [data-testid="stHorizontalBlock"] {
+        background: transparent !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- UI ---
 current_month_name = datetime.datetime.now().strftime("%B %Y")
 st.markdown(
