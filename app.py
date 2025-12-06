@@ -29,17 +29,14 @@ def load_data():
         with open(DATA_FILE, "r") as f:
             data = json.load(f)
 
-            # Migration for old structure
             if "budgets" in data:
                 data["needs"] = data.get("budgets", {})
                 del data["budgets"]
 
-            # Ensure all keys exist
             for key in default_data:
                 if key not in data:
                     data[key] = default_data[key]
 
-            # Check for Month Reset
             current_month = datetime.datetime.now().month
             if data["last_month"] != current_month:
                 data["expenses"] = []
@@ -53,44 +50,27 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# Initialize Session State
 if "data" not in st.session_state:
     st.session_state.data = load_data()
 
 # --- Helper Functions ---
-def get_current_month_dates():
-    now = datetime.datetime.now()
-    _, num_days = calendar.monthrange(now.year, now.month)
-    return now, num_days
-
 def calculate_totals():
     total_earnings = st.session_state.data["earnings"]
 
-    # Get all active categories to filter out orphaned expenses
     active_cats = set()
     for section in ["needs", "wants", "savings", "debts"]:
         active_cats.update(st.session_state.data[section].keys())
 
-    # Get debt categories
     debt_cats = list(st.session_state.data["debts"].keys())
     expenses = st.session_state.data["expenses"]
 
-    # Filter expenses to only include active categories
     valid_expenses = [x for x in expenses if x["Category"] in active_cats]
 
-    # Calculate spending in non-debt categories
     spent_non_debt = sum(x["Amount"] for x in valid_expenses if x["Category"] not in debt_cats)
-
-    # Calculate debt spending (actual payments made)
     debt_spent_total = sum(x["Amount"] for x in valid_expenses if x["Category"] in debt_cats)
-
-    # Deduction should be the budgeted debt amounts (total liability)
     debt_budget_total = sum(st.session_state.data["debts"].values())
 
-    # Remaining = Earnings - Non-debt spending - Total debt budget
     remaining = total_earnings - spent_non_debt - debt_budget_total
-
-    # Total Spent includes both non-debt spending AND debt payments
     total_spent = spent_non_debt + debt_spent_total
 
     return total_earnings, total_spent, remaining
@@ -99,32 +79,31 @@ def update_spent_callback(cat, key):
     new_total = st.session_state.get(key)
     if new_total is None:
         return
-
-    # Calculate current total for this category
     current_total = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
     diff = new_total - current_total
-
     if diff != 0:
-        new_expense = {
-            "Category": cat,
-            "Amount": int(diff),
-            "Date": str(datetime.date.today()),
-            "Note": "Manual Update"
-        }
-        st.session_state.data["expenses"].append(new_expense)
+        st.session_state.data["expenses"].append(
+            {
+                "Category": cat,
+                "Amount": int(diff),
+                "Date": str(datetime.date.today()),
+                "Note": "Manual Update",
+            }
+        )
         save_data(st.session_state.data)
 
 def set_max_spent(cat, budget, input_key):
     current_total = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
     diff = budget - current_total
     if diff != 0:
-        new_expense = {
-            "Category": cat,
-            "Amount": int(diff),
-            "Date": str(datetime.date.today()),
-            "Note": "Max Button"
-        }
-        st.session_state.data["expenses"].append(new_expense)
+        st.session_state.data["expenses"].append(
+            {
+                "Category": cat,
+                "Amount": int(diff),
+                "Date": str(datetime.date.today()),
+                "Note": "Max Button",
+            }
+        )
         save_data(st.session_state.data)
         st.session_state[input_key] = int(budget)
 
@@ -139,84 +118,86 @@ def add_category(section, name, budget):
 
 def delete_category(section, name):
     if name in st.session_state.data[section]:
-        del st.session_state.data[section]
+        del st.session_state.data[section][name]
         st.session_state.data["expenses"] = [
-            x for x in st.session_state.data["expenses"] 
-            if x["Category"] != name
+            x for x in st.session_state.data["expenses"] if x["Category"] != name
         ]
         save_data(st.session_state.data)
 
 def get_weeks_in_month(year, month):
-    """Returns a list of (start_date, end_date) tuples for each week in the month."""
     cal = calendar.monthcalendar(year, month)
     weeks = []
     for week in cal:
         days = [d for d in week if d != 0]
         if not days:
             continue
-        start_day = days[0]
-        end_day = days[-1]
-        start_date = datetime.date(year, month, start_day)
-        end_date = datetime.date(year, month, end_day)
+        start_date = datetime.date(year, month, days[0])
+        end_date = datetime.date(year, month, days[-1])
         weeks.append((start_date, end_date))
     return weeks
 
 # --- Plotting ---
 def render_summary_plot():
-    summary_data = []
-    total_earnings = st.session_state.data["earnings"]
+    data = st.session_state.data
+    total_earnings = data["earnings"]
 
+    rows = []
     for section in ["needs", "wants", "savings"]:
-        budget = sum(st.session_state.data[section].values())
-        section_cats = st.session_state.data[section].keys()
-        spent = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] in section_cats)
-        pct_spent = (spent / total_earnings * 100) if total_earnings > 0 else 0
-
-        summary_data.append({
-            "Category": section.capitalize(), 
-            "Type": "Spent %", 
-            "Percentage": pct_spent, 
-            "Amount": spent, 
-            "Budget": budget
-        })
-
-    df_plot = pd.DataFrame(summary_data)
-
-    if not df_plot.empty and total_earnings > 0:
-        base = alt.Chart(df_plot).encode(
-            x=alt.X('Category', axis=alt.Axis(labelAngle=0)),
-            y=alt.Y('Percentage', axis=alt.Axis(title='% of Income')),
-            color=alt.Color('Category', legend=None)
+        budget = sum(data[section].values())
+        section_cats = data[section].keys()
+        spent = sum(x["Amount"] for x in data["expenses"] if x["Category"] in section_cats)
+        remaining = max(budget - spent, 0)
+        rows.append(
+            {"Section": section.capitalize(), "Kind": "Spent", "Amount": spent}
+        )
+        rows.append(
+            {"Section": section.capitalize(), "Kind": "Remaining budget", "Amount": remaining}
         )
 
-        bars = base.mark_bar()
+    df = pd.DataFrame(rows)
+    if df.empty:
+        st.caption("Add some categories and expenses to see analytics.")
+        return
 
-        text = base.mark_text(
-            align='center',
-            baseline='bottom',
-            dy=-5
-        ).encode(
-            text=alt.Text('Percentage', format='.1f')
+    # nicer stacked bar chart
+    chart = (
+        alt.Chart(df)
+        .mark_bar(size=40)
+        .encode(
+            x=alt.X("Section:N", axis=alt.Axis(labelAngle=0, title=None)),
+            y=alt.Y("Amount:Q", axis=alt.Axis(title="₹ Amount")),
+            color=alt.Color(
+                "Kind:N",
+                scale=alt.Scale(range=["#fb7185", "#22c55e"]),
+                legend=alt.Legend(orient="bottom"),
+            ),
+            tooltip=[
+                alt.Tooltip("Section:N"),
+                alt.Tooltip("Kind:N"),
+                alt.Tooltip("Amount:Q", format=",.0f", title="Amount (₹)"),
+            ],
         )
-
-        chart = (bars + text).properties(
-            title="Spending as % of Income",
-            height=200
+        .properties(height=220)
+        .configure_axis(
+            labelColor="#e5e7eb",
+            titleColor="#e5e7eb",
+            gridColor="#374151",
         )
+        .configure_legend(labelColor="#e5e7eb", titleColor="#e5e7eb")
+        .configure_view(strokeOpacity=0)
+    )
 
-        st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, use_container_width=True)
 
-# --- Single CSS block (cleaned) ---
+# --- Main CSS (theme) ---
 st.markdown("""
     <style>
-    /* Global container */
     .block-container {
         padding-top: 1.25rem;
         padding-bottom: 3.5rem;
         max-width: 600px;
         background: linear-gradient(180deg, #0f0a1e 0%, #1a0b2e 100%);
     }
-
     h1, h2, h3 {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         font-weight: 700;
@@ -226,8 +207,6 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         background-clip: text;
     }
-
-    /* Summary card */
     .summary-card {
         background: linear-gradient(135deg, rgba(138, 43, 226, 0.15) 0%, rgba(123, 31, 162, 0.1) 100%);
         backdrop-filter: blur(10px);
@@ -238,19 +217,13 @@ st.markdown("""
         border: 1px solid rgba(255, 255, 255, 0.08);
         margin-bottom: 18px;
     }
-
     .summary-grid {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
         gap: 10px;
         text-align: center;
     }
-
-    .summary-item {
-        display: flex;
-        flex-direction: column;
-    }
-
+    .summary-item { display:flex; flex-direction:column; }
     .summary-label {
         font-size: 0.65rem;
         color: #b794f6;
@@ -259,164 +232,128 @@ st.markdown("""
         margin-bottom: 4px;
         font-weight: 600;
     }
-
     .summary-value {
         font-size: 1.05rem;
         font-weight: 900;
         color: #f3e7ff;
         text-shadow: 0 0 10px rgba(147, 51, 234, 0.3);
     }
+    .positive { color:#4ade80 !important; text-shadow:0 0 15px rgba(74,222,128,0.4); }
+    .negative { color:#fb7185 !important; text-shadow:0 0 15px rgba(251,113,133,0.4); }
 
-    .positive { 
-        color: #4ade80 !important;
-        text-shadow: 0 0 15px rgba(74, 222, 128, 0.4);
-    }
-    .negative { 
-        color: #fb7185 !important;
-        text-shadow: 0 0 15px rgba(251, 113, 133, 0.4);
-    }
-
-    /* Section headers */
     .section-header {
         font-size: 1.05rem;
         font-weight: 700;
         margin-top: 20px;
         margin-bottom: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        color: #e9d5ff;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        color:#e9d5ff;
     }
-
     .section-badge {
         font-size: 0.72rem;
-        background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
-        padding: 4px 10px;
-        border-radius: 16px;
-        color: #faf5ff;
-        border: 1px solid rgba(168, 85, 247, 0.3);
-        font-weight: 700;
-        box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
-        white-space: nowrap;
+        background: linear-gradient(135deg,#7c3aed 0%,#a855f7 100%);
+        padding:4px 10px;
+        border-radius:16px;
+        color:#faf5ff;
+        border:1px solid rgba(168,85,247,0.3);
+        font-weight:700;
+        box-shadow:0 4px 12px rgba(124,58,237,0.3);
+        white-space:nowrap;
     }
-
-    /* Expanders */
-    .stExpander {
-        background-color: transparent !important;
-        border: none !important;
-    }
-
+    .stExpander { background-color:transparent !important; border:none !important; }
     .stExpander > details {
-        background: linear-gradient(135deg, rgba(88, 28, 135, 0.2) 0%, rgba(76, 29, 149, 0.15) 100%);
+        background: linear-gradient(135deg, rgba(88,28,135,0.2) 0%, rgba(76,29,149,0.15) 100%);
         backdrop-filter: blur(8px);
-        border-radius: 14px;
-        border: 1px solid rgba(168, 85, 247, 0.2);
-        margin-bottom: 10px;
-        overflow: hidden;
-        transition: all 0.25s ease;
-        box-shadow: 0 4px 16px rgba(124, 58, 237, 0.1);
+        border-radius:14px;
+        border:1px solid rgba(168,85,247,0.2);
+        margin-bottom:10px;
+        overflow:hidden;
+        transition:all 0.25s ease;
+        box-shadow:0 4px 16px rgba(124,58,237,0.1);
     }
-
     .stExpander > details:hover {
-        border-color: rgba(168, 85, 247, 0.5);
-        box-shadow: 0 8px 20px rgba(124, 58, 237, 0.25);
-        transform: translateY(-1px);
+        border-color:rgba(168,85,247,0.5);
+        box-shadow:0 8px 20px rgba(124,58,237,0.25);
+        transform:translateY(-1px);
     }
-
     .stExpander > details > summary {
-        padding: 10px 14px !important;
-        background: linear-gradient(135deg, rgba(109, 40, 217, 0.15) 0%, rgba(124, 58, 237, 0.1) 100%) !important;
-        border-bottom: 1px solid rgba(168, 85, 247, 0.2);
-        font-weight: 600;
-        font-size: 0.95rem;
-        color: #e9d5ff;
+        padding:10px 14px !important;
+        background: linear-gradient(135deg, rgba(109,40,217,0.15) 0%, rgba(124,58,237,0.1) 100%) !important;
+        border-bottom:1px solid rgba(168,85,247,0.2);
+        font-weight:600;
+        font-size:0.95rem;
+        color:#e9d5ff;
     }
-
     .stExpander > details > div {
-        padding: 14px !important;
-        background: linear-gradient(135deg, rgba(76, 29, 149, 0.1) 0%, rgba(88, 28, 135, 0.05) 100%);
+        padding:14px !important;
+        background: linear-gradient(135deg, rgba(76,29,149,0.1) 0%, rgba(88,28,135,0.05) 100%);
     }
-
-    /* Inputs */
     .stNumberInput input {
-        background-color: rgba(30, 10, 60, 0.6) !important;
-        border: 2px solid rgba(168, 85, 247, 0.3) !important;
-        border-radius: 8px !important;
-        color: #f3e7ff !important;
-        font-weight: 600;
-        font-size: 16px !important;
-        padding: 4px 8px !important;
+        background-color:rgba(30,10,60,0.6) !important;
+        border:2px solid rgba(168,85,247,0.3) !important;
+        border-radius:8px !important;
+        color:#f3e7ff !important;
+        font-weight:600;
+        font-size:16px !important;
+        padding:4px 8px !important;
     }
-
     .stNumberInput input:focus {
-        border-color: #a855f7 !important;
-        box-shadow: 0 0 16px rgba(168, 85, 247, 0.4) !important;
+        border-color:#a855f7 !important;
+        box-shadow:0 0 16px rgba(168,85,247,0.4) !important;
     }
-
     .stButton button {
-        border-radius: 9px !important;
-        font-weight: 700 !important;
-        background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
-        color: white;
-        border: none;
-        transition: all 0.2s ease;
-        box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
-        padding: 4px 10px !important;
-        min-height: 32px !important;
-        font-size: 0.9rem !important;
+        border-radius:9px !important;
+        font-weight:700 !important;
+        background: linear-gradient(135deg,#7c3aed 0%,#a855f7 100%);
+        color:white;
+        border:none;
+        transition:all 0.2s ease;
+        box-shadow:0 4px 12px rgba(124,58,237,0.3);
+        padding:4px 10px !important;
+        min-height:32px !important;
+        font-size:0.9rem !important;
     }
-
     .stButton button:hover {
-        background: linear-gradient(135deg, #8b5cf6 0%, #c084fc 100%);
-        box-shadow: 0 6px 16px rgba(139, 92, 246, 0.5);
-        transform: translateY(-1px);
+        background: linear-gradient(135deg,#8b5cf6 0%,#c084fc 100%);
+        box-shadow:0 6px 16px rgba(139,92,246,0.5);
+        transform:translateY(-1px);
     }
+    .stButton { margin:0 !important; }
+    div[data-testid="column"] { padding:0 !important; }
+    .element-container { margin-bottom:0.4rem; }
 
-    .stButton { margin: 0 !important; }
-
-    div[data-testid="column"] { padding: 0 !important; }
-
-    .element-container { margin-bottom: 0.4rem; }
-
-    /* Progress bar */
     .progress-bg {
-        background: rgba(30, 10, 60, 0.6);
-        height: 8px;
-        border-radius: 10px;
-        overflow: hidden;
-        margin-top: 8px;
-        border: 1px solid rgba(168, 85, 247, 0.2);
+        background:rgba(30,10,60,0.6);
+        height:8px;
+        border-radius:10px;
+        overflow:hidden;
+        margin-top:8px;
+        border:1px solid rgba(168,85,247,0.2);
     }
-
     .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #4ade80 0%, #22c55e 100%);
-        border-radius: 10px;
-        box-shadow: 0 0 12px rgba(74, 222, 128, 0.5);
+        height:100%;
+        background:linear-gradient(90deg,#4ade80 0%,#22c55e 100%);
+        border-radius:10px;
+        box-shadow:0 0 12px rgba(74,222,128,0.5);
     }
-
-    .progress-fill.warning { 
-        background: linear-gradient(90deg, #fbbf24 0%, #f59e0b 100%);
-        box-shadow: 0 0 12px rgba(251, 191, 36, 0.5);
+    .progress-fill.warning {
+        background:linear-gradient(90deg,#fbbf24 0%,#f59e0b 100%);
+        box-shadow:0 0 12px rgba(251,191,36,0.5);
     }
-    .progress-fill.danger { 
-        background: linear-gradient(90deg, #fb7185 0%, #f43f5e 100%);
-        box-shadow: 0 0 12px rgba(251, 113, 133, 0.5);
+    .progress-fill.danger {
+        background:linear-gradient(90deg,#fb7185 0%,#f43f5e 100%);
+        box-shadow:0 0 12px rgba(251,113,133,0.5);
     }
-
-    .stCaption, [data-testid="stCaptionContainer"] {
-        color: #c4b5fd !important;
-    }
-
-    hr {
-        margin: 0.8rem 0;
-    }
+    .stCaption,[data-testid="stCaptionContainer"]{color:#c4b5fd !important;}
+    hr { margin:0.8rem 0; }
     </style>
 """, unsafe_allow_html=True)
 
+# --- Dataframe styling (table colors) ---
 st.markdown("""
     <style>
-    /* Dataframe styling to match purple theme */
     .stDataFrame [data-testid="stTable"] {
         background: radial-gradient(circle at top left, #261347 0%, #140a29 45%, #0b0718 100%);
         color: #e5e7eb;
@@ -424,29 +361,24 @@ st.markdown("""
         overflow: hidden;
         border: 1px solid rgba(168, 85, 247, 0.35);
     }
-
     .stDataFrame [data-testid="stTable"] th {
-        background: rgba(55, 25, 109, 0.95) !important;
+        background: rgba(55,25,109,0.95) !important;
         color: #e9d5ff !important;
         font-weight: 600 !important;
         font-size: 0.76rem !important;
-        border-bottom: 1px solid rgba(129, 140, 248, 0.5) !important;
+        border-bottom: 1px solid rgba(129,140,248,0.5) !important;
     }
-
     .stDataFrame [data-testid="stTable"] td {
         background: transparent !important;
         font-size: 0.78rem !important;
-        border-bottom: 1px solid rgba(55, 65, 81, 0.55) !important;
+        border-bottom: 1px solid rgba(55,65,81,0.55) !important;
     }
-
     .stDataFrame [data-testid="stTable"] tbody tr:nth-child(even) td {
-        background: rgba(17, 24, 39, 0.65) !important;
+        background: rgba(17,24,39,0.65) !important;
     }
-
     .stDataFrame [data-testid="stTable"] tbody tr:hover td {
-        background: rgba(124, 58, 237, 0.25) !important;
+        background: rgba(124,58,237,0.25) !important;
     }
-
     .stDataFrame [data-testid="stHorizontalBlock"] {
         background: transparent !important;
     }
@@ -460,16 +392,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- Top Section: Total Summary & Weekly Spends ---
 total_earnings, total_spent, remaining = calculate_totals()
 total_budget_all = sum(
     sum(st.session_state.data[k].values()) for k in ["needs", "wants", "savings", "debts"]
 )
-
 remaining_color = "positive" if remaining >= 0 else "negative"
 
-st.markdown(
-    f"""
+st.markdown(f"""
     <div class="summary-card">
         <div class="summary-grid">
             <div class="summary-item">
@@ -486,11 +415,9 @@ st.markdown(
             </div>
         </div>
     </div>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
-# Weekly Spends (kept collapsed by default)
+# Weekly overview
 with st.expander("📅 Weekly Overview", expanded=False):
     now = datetime.datetime.now()
     weeks = get_weeks_in_month(now.year, now.month)
@@ -518,25 +445,25 @@ with st.expander("📅 Weekly Overview", expanded=False):
         for i, (start, end) in enumerate(weeks):
             week_num = i + 1
             week_expenses = [
-                x for x in st.session_state.data["expenses"] 
+                x
+                for x in st.session_state.data["expenses"]
                 if start <= datetime.datetime.strptime(x["Date"], "%Y-%m-%d").date() <= end
                 and x["Category"] in wants_categories
             ]
             week_spent = sum(x["Amount"] for x in week_expenses)
-
             is_past = end < now.date()
             is_current = start <= now.date() <= end
-
             status_icon = "🔒" if is_past else ("👉" if is_current else "📅")
             display_budget = "-" if is_past else f"₹{int(dynamic_weekly_budget):,}"
-
-            weekly_data.append({
-                "Status": status_icon,
-                "Week": f"W{week_num}",
-                "Dates": f"{start.strftime('%d')}-{end.strftime('%d')}",
-                "Budget": display_budget,
-                "Spent": f"₹{int(week_spent):,}"
-            })
+            weekly_data.append(
+                {
+                    "Status": status_icon,
+                    "Week": f"W{week_num}",
+                    "Dates": f"{start.strftime('%d')}-{end.strftime('%d')}",
+                    "Budget": display_budget,
+                    "Spent": f"₹{int(week_spent):,}",
+                }
+            )
 
         st.dataframe(
             pd.DataFrame(weekly_data),
@@ -551,11 +478,11 @@ with st.expander("📅 Weekly Overview", expanded=False):
             },
         )
 
-# Chart (collapsed by default)
+# Analytics
 with st.expander("📊 Analytics", expanded=False):
     render_summary_plot()
 
-# Monthly Income (collapsed by default)
+# Monthly Income
 with st.expander("💵 Monthly Income", expanded=False):
     new_earnings = st.number_input(
         "Income Amount",
@@ -571,7 +498,7 @@ with st.expander("💵 Monthly Income", expanded=False):
 
 st.markdown("---")
 
-# --- Reusable Section Renderer ---
+# --- Section Renderer ---
 def render_section(title, section_key):
     section_total = sum(st.session_state.data[section_key].values())
     earnings = st.session_state.data["earnings"]
@@ -586,7 +513,6 @@ def render_section(title, section_key):
         col3_header = "Spent"
         display_badge = f"₹{int(section_total):,} • {percentage:.1f}%"
 
-    # Header
     st.markdown(
         f"""
         <div class="section-header">
@@ -597,7 +523,7 @@ def render_section(title, section_key):
         unsafe_allow_html=True,
     )
 
-    # Add Category ABOVE list
+    # Add category first
     with st.expander(f"➕ Add {title}", expanded=(section_total == 0)):
         with st.form(f"add_{section_key}"):
             new_name = st.text_input("Category Name")
@@ -609,7 +535,6 @@ def render_section(title, section_key):
                     st.error("Category already exists or invalid name")
 
     categories = list(st.session_state.data[section_key].keys())
-
     if not categories:
         st.caption(f"No categories yet in {title}. Add one above to start tracking.")
 
@@ -618,8 +543,6 @@ def render_section(title, section_key):
         spent_so_far = sum(
             x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat
         )
-
-        # Progress Bar Logic
         pct = (spent_so_far / budget * 100) if budget > 0 else 0
         progress_class = "progress-fill"
         if pct > 100:
@@ -645,7 +568,6 @@ def render_section(title, section_key):
             )
 
             col_bud, col_spent = st.columns(2)
-
             with col_bud:
                 st.caption(col2_header.upper())
                 new_budget = st.number_input(
@@ -664,9 +586,7 @@ def render_section(title, section_key):
 
             with col_spent:
                 st.caption(col3_header.upper())
-
                 col_input, col_max = st.columns([4, 1])
-
                 spent_key = f"spent_{section_key}_{cat}"
                 if spent_key not in st.session_state:
                     st.session_state[spent_key] = int(spent_so_far)
@@ -677,21 +597,18 @@ def render_section(title, section_key):
                     if st.session_state[spent_key] > input_max:
                         st.session_state[spent_key] = input_max
 
-                input_kwargs = {
-                    "label": col3_header,
-                    "step": 10,
-                    "min_value": 0,
-                    "max_value": input_max,
-                    "key": spent_key,
-                    "format": "%d",
-                    "on_change": update_spent_callback,
-                    "args": (cat, spent_key),
-                    "label_visibility": "collapsed",
-                }
-
                 with col_input:
-                    st.number_input(**input_kwargs)
-
+                    st.number_input(
+                        col3_header,
+                        step=10,
+                        min_value=0,
+                        max_value=input_max,
+                        key=spent_key,
+                        format="%d",
+                        on_change=update_spent_callback,
+                        args=(cat, spent_key),
+                        label_visibility="collapsed",
+                    )
                 with col_max:
                     st.button(
                         "📍",
@@ -711,7 +628,7 @@ def render_section(title, section_key):
                 delete_category(section_key, cat)
                 st.rerun()
 
-# Render Sections
+# Render sections
 render_section("Needs", "needs")
 render_section("Wants", "wants")
 render_section("Savings", "savings")
