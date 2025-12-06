@@ -4,7 +4,6 @@ import json
 import os
 import datetime
 import calendar
-import altair as alt
 
 # --- Constants & Configuration ---
 DATA_FILE = "budget_data.json"
@@ -19,7 +18,7 @@ def load_data():
         "savings": {},
         "debts": {},
         "expenses": [],
-        "last_month": datetime.datetime.now().month
+        "last_month": datetime.datetime.now().month,
     }
 
     if not os.path.exists(DATA_FILE):
@@ -46,9 +45,11 @@ def load_data():
     except json.JSONDecodeError:
         return default_data
 
+
 def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
+
 
 if "data" not in st.session_state:
     st.session_state.data = load_data()
@@ -66,8 +67,12 @@ def calculate_totals():
 
     valid_expenses = [x for x in expenses if x["Category"] in active_cats]
 
-    spent_non_debt = sum(x["Amount"] for x in valid_expenses if x["Category"] not in debt_cats)
-    debt_spent_total = sum(x["Amount"] for x in valid_expenses if x["Category"] in debt_cats)
+    spent_non_debt = sum(
+        x["Amount"] for x in valid_expenses if x["Category"] not in debt_cats
+    )
+    debt_spent_total = sum(
+        x["Amount"] for x in valid_expenses if x["Category"] in debt_cats
+    )
     debt_budget_total = sum(st.session_state.data["debts"].values())
 
     remaining = total_earnings - spent_non_debt - debt_budget_total
@@ -75,11 +80,14 @@ def calculate_totals():
 
     return total_earnings, total_spent, remaining
 
+
 def update_spent_callback(cat, key):
     new_total = st.session_state.get(key)
     if new_total is None:
         return
-    current_total = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
+    current_total = sum(
+        x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat
+    )
     diff = new_total - current_total
     if diff != 0:
         st.session_state.data["expenses"].append(
@@ -92,8 +100,11 @@ def update_spent_callback(cat, key):
         )
         save_data(st.session_state.data)
 
+
 def set_max_spent(cat, budget, input_key):
-    current_total = sum(x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat)
+    current_total = sum(
+        x["Amount"] for x in st.session_state.data["expenses"] if x["Category"] == cat
+    )
     diff = budget - current_total
     if diff != 0:
         st.session_state.data["expenses"].append(
@@ -107,6 +118,7 @@ def set_max_spent(cat, budget, input_key):
         save_data(st.session_state.data)
         st.session_state[input_key] = int(budget)
 
+
 def add_category(section, name, budget):
     if name and name.strip():
         name = name.strip()
@@ -116,6 +128,7 @@ def add_category(section, name, budget):
             return True
     return False
 
+
 def delete_category(section, name):
     if name in st.session_state.data[section]:
         del st.session_state.data[section][name]
@@ -123,6 +136,7 @@ def delete_category(section, name):
             x for x in st.session_state.data["expenses"] if x["Category"] != name
         ]
         save_data(st.session_state.data)
+
 
 def get_weeks_in_month(year, month):
     cal = calendar.monthcalendar(year, month)
@@ -136,61 +150,10 @@ def get_weeks_in_month(year, month):
         weeks.append((start_date, end_date))
     return weeks
 
-# --- Plotting ---
-def render_summary_plot():
-    data = st.session_state.data
-    total_earnings = data["earnings"]
-
-    rows = []
-    for section in ["needs", "wants", "savings"]:
-        budget = sum(data[section].values())
-        section_cats = data[section].keys()
-        spent = sum(x["Amount"] for x in data["expenses"] if x["Category"] in section_cats)
-        remaining = max(budget - spent, 0)
-        rows.append(
-            {"Section": section.capitalize(), "Kind": "Spent", "Amount": spent}
-        )
-        rows.append(
-            {"Section": section.capitalize(), "Kind": "Remaining budget", "Amount": remaining}
-        )
-
-    df = pd.DataFrame(rows)
-    if df.empty:
-        st.caption("Add some categories and expenses to see analytics.")
-        return
-
-    # nicer stacked bar chart
-    chart = (
-        alt.Chart(df)
-        .mark_bar(size=40)
-        .encode(
-            x=alt.X("Section:N", axis=alt.Axis(labelAngle=0, title=None)),
-            y=alt.Y("Amount:Q", axis=alt.Axis(title="₹ Amount")),
-            color=alt.Color(
-                "Kind:N",
-                scale=alt.Scale(range=["#fb7185", "#22c55e"]),
-                legend=alt.Legend(orient="bottom"),
-            ),
-            tooltip=[
-                alt.Tooltip("Section:N"),
-                alt.Tooltip("Kind:N"),
-                alt.Tooltip("Amount:Q", format=",.0f", title="Amount (₹)"),
-            ],
-        )
-        .properties(height=220)
-        .configure_axis(
-            labelColor="#e5e7eb",
-            titleColor="#e5e7eb",
-            gridColor="#374151",
-        )
-        .configure_legend(labelColor="#e5e7eb", titleColor="#e5e7eb")
-        .configure_view(strokeOpacity=0)
-    )
-
-    st.altair_chart(chart, use_container_width=True)
 
 # --- Main CSS (theme) ---
-st.markdown("""
+st.markdown(
+    """
     <style>
     .block-container {
         padding-top: 1.25rem;
@@ -349,41 +312,9 @@ st.markdown("""
     .stCaption,[data-testid="stCaptionContainer"]{color:#c4b5fd !important;}
     hr { margin:0.8rem 0; }
     </style>
-""", unsafe_allow_html=True)
-
-# --- Dataframe styling (table colors) ---
-st.markdown("""
-    <style>
-    .stDataFrame [data-testid="stTable"] {
-        background: radial-gradient(circle at top left, #261347 0%, #140a29 45%, #0b0718 100%);
-        color: #e5e7eb;
-        border-radius: 12px;
-        overflow: hidden;
-        border: 1px solid rgba(168, 85, 247, 0.35);
-    }
-    .stDataFrame [data-testid="stTable"] th {
-        background: rgba(55,25,109,0.95) !important;
-        color: #e9d5ff !important;
-        font-weight: 600 !important;
-        font-size: 0.76rem !important;
-        border-bottom: 1px solid rgba(129,140,248,0.5) !important;
-    }
-    .stDataFrame [data-testid="stTable"] td {
-        background: transparent !important;
-        font-size: 0.78rem !important;
-        border-bottom: 1px solid rgba(55,65,81,0.55) !important;
-    }
-    .stDataFrame [data-testid="stTable"] tbody tr:nth-child(even) td {
-        background: rgba(17,24,39,0.65) !important;
-    }
-    .stDataFrame [data-testid="stTable"] tbody tr:hover td {
-        background: rgba(124,58,237,0.25) !important;
-    }
-    .stDataFrame [data-testid="stHorizontalBlock"] {
-        background: transparent !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
 # --- UI ---
 current_month_name = datetime.datetime.now().strftime("%B %Y")
@@ -398,7 +329,8 @@ total_budget_all = sum(
 )
 remaining_color = "positive" if remaining >= 0 else "negative"
 
-st.markdown(f"""
+st.markdown(
+    f"""
     <div class="summary-card">
         <div class="summary-grid">
             <div class="summary-item">
@@ -415,9 +347,11 @@ st.markdown(f"""
             </div>
         </div>
     </div>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
-# Weekly overview
+# --- Weekly Overview (text only) ---
 with st.expander("📅 Weekly Overview", expanded=False):
     now = datetime.datetime.now()
     weeks = get_weeks_in_month(now.year, now.month)
@@ -436,53 +370,107 @@ with st.expander("📅 Weekly Overview", expanded=False):
     dynamic_weekly_budget = remaining / weeks_remaining if weeks_remaining > 0 else 0
     wants_categories = list(st.session_state.data["wants"].keys())
 
-    st.caption("👉 This view tracks only your Wants spending week by week.")
+    st.markdown(
+        "<p style='font-size:0.85rem;color:#c4b5fd;'>"
+        "This view tracks your Wants spending week by week in plain text."
+        "</p>",
+        unsafe_allow_html=True,
+    )
 
     if not wants_categories:
-        st.caption("Add at least one Wants category to see weekly budgets.")
+        st.markdown(
+            "<p style='font-size:0.8rem;color:#9ca3af;'>"
+            "Add at least one Wants category to see weekly guidance."
+            "</p>",
+            unsafe_allow_html=True,
+        )
     else:
-        weekly_data = []
         for i, (start, end) in enumerate(weeks):
             week_num = i + 1
             week_expenses = [
                 x
                 for x in st.session_state.data["expenses"]
-                if start <= datetime.datetime.strptime(x["Date"], "%Y-%m-%d").date() <= end
+                if start
+                <= datetime.datetime.strptime(x["Date"], "%Y-%m-%d").date()
+                <= end
                 and x["Category"] in wants_categories
             ]
             week_spent = sum(x["Amount"] for x in week_expenses)
+
             is_past = end < now.date()
             is_current = start <= now.date() <= end
-            status_icon = "🔒" if is_past else ("👉" if is_current else "📅")
-            display_budget = "-" if is_past else f"₹{int(dynamic_weekly_budget):,}"
-            weekly_data.append(
-                {
-                    "Status": status_icon,
-                    "Week": f"W{week_num}",
-                    "Dates": f"{start.strftime('%d')}-{end.strftime('%d')}",
-                    "Budget": display_budget,
-                    "Spent": f"₹{int(week_spent):,}",
-                }
+
+            label = "Past week"
+            if is_current:
+                label = "Current week"
+            elif not is_past:
+                label = "Upcoming week"
+
+            suggested = "-" if is_past else f"₹{int(dynamic_weekly_budget):,}"
+            spent_txt = f"₹{int(week_spent):,}"
+
+            st.markdown(
+                f"""
+                <div style="padding:6px 10px;margin-bottom:4px;
+                            border-radius:10px;
+                            background:rgba(17,24,39,0.65);
+                            border:1px solid rgba(75,85,99,0.6);">
+                    <div style="font-size:0.85rem;color:#e5e7eb;">
+                        <strong>W{week_num}</strong> · {start.strftime('%d')}–{end.strftime('%d')} · {label}
+                    </div>
+                    <div style="font-size:0.8rem;color:#d1d5db;margin-top:2px;">
+                        Suggested: <span style="color:#a5b4fc;">{suggested}</span> ·
+                        Spent so far: <span style="color:#f97373;">{spent_txt}</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
 
-        st.dataframe(
-            pd.DataFrame(weekly_data),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Status": st.column_config.TextColumn("", width="small"),
-                "Week": st.column_config.TextColumn("Week", width="small"),
-                "Dates": st.column_config.TextColumn("Dates", width="medium"),
-                "Budget": st.column_config.TextColumn("Budget", width="small"),
-                "Spent": st.column_config.TextColumn("Spent", width="small"),
-            },
-        )
-
-# Analytics
+# --- Analytics (text only) ---
 with st.expander("📊 Analytics", expanded=False):
-    render_summary_plot()
+    data = st.session_state.data
+    earnings = data["earnings"]
 
-# Monthly Income
+    if earnings <= 0:
+        st.markdown(
+            "<p style='font-size:0.8rem;color:#9ca3af;'>"
+            "Enter your monthly income to see a text summary of spending."
+            "</p>",
+            unsafe_allow_html=True,
+        )
+    else:
+        for section in ["needs", "wants", "savings"]:
+            budget = sum(data[section].values())
+            cats = list(data[section].keys())
+            spent = sum(
+                x["Amount"]
+                for x in data["expenses"]
+                if x["Category"] in cats
+            )
+            remaining_sec = max(budget - spent, 0)
+            pct_of_income = (spent / earnings * 100) if earnings > 0 else 0
+
+            st.markdown(
+                f"""
+                <div style="margin-bottom:10px;padding:8px 10px;
+                            border-radius:10px;
+                            background:rgba(30,10,60,0.65);
+                            border:1px solid rgba(88,28,135,0.7);">
+                    <div style="font-size:0.85rem;color:#e9d5ff;">
+                        <strong>{section.capitalize()}</strong>
+                    </div>
+                    <div style="font-size:0.8rem;color:#d1d5db;margin-top:2px;">
+                        Spent: <span style="color:#f97373;">₹{int(spent):,}</span> ·
+                        Remaining budget: <span style="color:#4ade80;">₹{int(remaining_sec):,}</span><br/>
+                        This is about <span style="color:#a5b4fc;">{pct_of_income:.1f}%</span> of your income.
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+# --- Monthly Income ---
 with st.expander("💵 Monthly Income", expanded=False):
     new_earnings = st.number_input(
         "Income Amount",
@@ -519,7 +507,7 @@ def render_section(title, section_key):
             <span>{title}</span>
             <span class="section-badge">{display_badge}</span>
         </div>
-    """,
+        """,
         unsafe_allow_html=True,
     )
 
@@ -563,7 +551,7 @@ def render_section(title, section_key):
                     <div class="{progress_class}" style="width: {min(pct, 100)}%;"></div>
                 </div>
                 <div style="margin-bottom: 10px;"></div>
-            """,
+                """,
                 unsafe_allow_html=True,
             )
 
@@ -628,7 +616,8 @@ def render_section(title, section_key):
                 delete_category(section_key, cat)
                 st.rerun()
 
-# Render sections
+
+# --- Render Sections ---
 render_section("Needs", "needs")
 render_section("Wants", "wants")
 render_section("Savings", "savings")
